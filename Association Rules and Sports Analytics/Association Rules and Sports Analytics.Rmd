@@ -1,889 +1,1831 @@
 ---
 title: 'Homework 2: Association Rules and Sports Analytics'
-author: 
-- Jesse Sprinkel
-- Haojin Jia 
-- Chandrakanth Tolupunoori 
-- Anshuman Vijayvargia
-- Priyanka Singhal
-date: "10/03/2018"
-
-abstract: |
-  This is the white paper and technical details of our analysis and recommendations.
-
+author: Tarun Newton, Abhinav Kumar, Pranav Lingaraju, Kavya Puthuvaya, Pranav Srinivas
+  Nagavelli, Sarath Haridas
+date: "3 October 2018"
 output:
   pdf_document:
-    toc: true
-    toc_depth: 4
-    number_sections: true
+    toc: yes
 urlcolor: blue
 ---
 
+# A. The Business Problem
 
-# One Main Problem and Our Approach:
+As the resident data scientist of Chelsea Football Club our coach wants to find patterns that he can exploit to increase success on the field and decrease failure; specifically, he wants to find non-obvious patterns because his years of experience has taught him many of the obvious ones. He suggests that we use association rules because he once heard how Walmart used them to find a non-obvious pattern and sell more pop-tarts during hurricanes.
 
+Football like every industry is becoming increasingly data-driven and there exists an enormous advantage to be leverage by generating the right kind of insights from the data collected at Chelsea. Football, as we know, is very competitive so even a small improvement can result in a huge difference in results. Chelsea is valued at $2 billion and brings in a revenue of $466M yearly and this hinges on the success of our players every season. 
 
-## Situation:
+## 1. Why Association Rules?
 
-Our objective is to analyze soccer data to find insights and non-obvious patterns that will help A.S. Roma achieve greater success on the field. We have been specifically asked to utilize association rules in our analysis.
+We also believe that association rules can be leveraged because Football is a weak link sport. Sally, a behavioral economist shows in his book The Numbers Game through statistical analysis that teams win more games if they upgrade the weakest vs upgrading their strongest player. This is because in football a lot of players have to touch the ball to make a goal. If one does not upgrade the weakest links on the team, they will drag the rest of the team down. In Football the worst players on a team are the most important. On the other hand, Gladwell also states that basketball is a strong link sport. A strong link is like professional basketball because studies show that if people want to win basketball games, you should upgrade the top one to two players on the team. Basketball is a star playing game. For example, Lebron James does not need anyone else to touch the ball if he wants to win. 
 
-## Complication:
+We first plan to explore the data we have at hand to first understand the different kinds of analysis and then dive into association rules to see if we can find some non-obvious patterns that we can leverage to help Chelsea achieve success the coming year!
 
-The data available is comprehensive, covering more than 8 leagues and thousands of teams and players. Converting this data into a format suitable for rule mining is difficult, as well as knowing where to look for rules that will provide value for the team.
+References:  
+https://www.forbes.com/teams/chelsea/  
+http://revisionisthistory.com/episodes/06-my-little-hundred-million (Malcolm Gladwell's Podcast)  
+https://www.theguardian.com/books/2013/may/24/numbers-game-everything-football-wrong  
 
-## Our Approach
+# B. EDA
+## 1. Load Data and Inital Exploration 
 
-### How we define the success for team and player
+_Load Dependencies_
 
-We have chosen two ways to define success:
-
-1. The final result (win, loss, draw), specifically **Win/loss Percentage**, to define the success of the team.
-2. **Mean Goal Difference (MGD)** to define the success of the team.
-
-### What are the KPIs we define:
-
-Based on our research, we assume that all these factors:
-
-1. Team attributes
-2. Team player attributes
-3. Player Positions
-4. player combinations
-
-actually do have an affect on the final result of a match. 
-
-These factors are not exhaustive. However, limited by resources, we decided to concentrate on these factors.
-
-
-# Preparedness
-
-## Brief Summary of the Dataset
-
-### Data Overview
-
-What does the data look like?:
-
-* +25,000 matches
-* +10,000 players
-* 11 European Countries with their lead championship
-* Seasons 2008 to 2016
-* Players and Teams' attributes* sourced from EA Sports' FIFA video game series, including the weekly updates
-* Team line up with squad formation (X, Y coordinates)
-* Betting odds from up to 10 providers
-* Detailed match events (goal types, possession, corner, cross, fouls, cards etc...) for +10,000 matches
-
-
-### Original Data Source: 
-
-1. [Scores, lineup, team formation and events](http://football-data.mx-api.enetscores.com/ )
-2. [Betting odds](http://www.football-data.co.uk/)
-3. [players and teams attributes from EA Sports FIFA games](http://sofifa.com/ )
-
-## Data Cleaning
-
-## R Library
-
-**Please make sure successfully install the packages before reproducing the research**
-```{r lib, message = FALSE, warning=FALSE}
+```{r global_options, warning = FALSE, message = FALSE}
 library(dplyr)
-library(magrittr)
 library(arules)
 library(tidyr)
-library(arulesViz)
+library(RSQLite)
+library(knitr)
 library(ggplot2)
-library(stringr)
-library(lubridate)
+library(scales)
+library(ggthemes)
+library(ggrepel)
+library(magrittr)
+library(VIM)
+library(corrplot)
+library(stats)
+library(data.table)
+library(datasets)
+library(arulesViz)
+library(gridExtra)
+library(reshape2)
+library(pander)
+library(viridis)
+library(xml2)
+library(purrr)
+library(tibble)
 ```
 
-**Set working directory**
-```{r setup}
-knitr::opts_knit$set(root.dir = 'C:/2018Fall/6410/HW 2')
-```
 
-**Load packages and data to local machine**
+## 2. Load Data
 
-```{r }
+_Loading the data hosted in the SQL database_
+
+```{r}
 con <- src_sqlite("euro_soccer.sqlite")
 
 country_tbl <- tbl(con, "country")
-league_tbl <- tbl(con, "league")
-match_tbl <- tbl(con, "match")
-player_tbl <- tbl(con, "player")
-player_atts_tbl <- tbl(con, "player_attributes")
-team_tbl <- tbl(con, "team")
-team_atts_tbl <- tbl(con, "team_attributes")
+country = collect(country_tbl)
 
-#write the data to local memory
-country <- collect(country_tbl)
-league <- collect(league_tbl)
-match <- collect(match_tbl)
-player <- collect(player_tbl)
-player_atts <- collect(player_atts_tbl)
-team <- collect(team_tbl)
-team_att <- collect(team_atts_tbl)
+league_tbl <- tbl(con, "league")
+league = collect(league_tbl)
+
+match_tbl <- tbl(con, "match")
+match = collect(match_tbl)
+
+player_tbl <- tbl(con, "player")
+player = collect ( player_tbl)
+
+player_atts_tbl <- tbl(con, "player_attributes")
+player_atts = collect (player_atts_tbl)
+
+team_tbl <- tbl(con, "team")
+team = collect(team_tbl)
 ```
 
-# Historical Performance: 
+## 3. Data Exploration
 
-## Why historical performance matters? The effective way to delve into why we lose, why we win and how we improve.
+We see that we have 6 tables in the SQL database which we can leverage for our analysis. We'll now look at each of the tables to understand what information is present and if any data issues exist.
+_Country Table_
+```{r rows.print = 11}
+country
+```
 
-Before diving into the strategy to increase the odds of winning, how was the historic performance of our client? Only with this mind can we study why we won in the past matches, why we were defeated by certain teams and how we can work on improving our competitiveness.
+In the country table we see that there is data from 11 different countries. The league in England is what we are interested in as Chelsea plays in the English Premier League. We can use that information to filter the other tables for the league in England.
 
-## Our approach: Conducting association analysis but with special restrictions.
+_League Table_
+```{r rows.print = 11}
+league
+```
 
-To answer this question, we uses association rules and filters the rules with the following characters:
+In the league table we see that we have the league names for the 11 countries that are present. As mentioned, Chelsea plays in the English Premier League (League ID: 1729)
 
-1. Match results are the sole item on the right hand.
-2. Two team ID in the left-hand side, one of which is our client and the other is we competed with.
+_Match Table_
+```{r}
+dim(match)
+```
 
-In the case of our rules, the confidence metric represents the probability that a win will occur. Lift and support metrics may have little meanings considering our interest of analysis in that we care about the odds of winning (with the same direction to the probability of winning) when our client team competes with rivals on average. It's useless to compare this specific format with, for example, more than 2 competing teams on the left-hand side. 
+From our exploration we see that the match table contains all the information regarding a certain match from seasons 2008 to 2016. Due to its large size we have displayed the summary of this table in the Appendix. It also has betting odds from up to 10 providers and detailed match events (goal types, possession, corner, cross, fouls, cards etc...)
 
-## Our analysis: 
+Also, at a high level we see that there are nulls in the overall table. When we filter for Chelsea we see that there are no nulls or any outlier information in the player information for each match so we feel confident in using the table as is.
+
+_Player Table_
+```{r}
+summary(player)
+glimpse(player)
+
+```
+
+In the Player table we have all the player attributes which are sourced from EA Sports' FIFA video game series.
+
+_Player Atts Table_
+```{r}
+dim(player_atts)
+```
+
+On our exploration of the player atts table we see that it has different player attributes which are sourced from EA Sports' FIFA video game series. These metrics are interesting and will help us quantify the player belyond his name and club. Due to its size we have displayed the summary in the appendix. 
+
+_Team Table_
+```{r}
+summary(team)
+glimpse(team)
+```
+In the team table we see it has the team id and name which will help us filter the league table specifically for Chelsea.
+
+## 4. Overview of Chelsea's League Performance
+
+### 4.1 Analyzing from Season 2008/2009 to 2015/2016
+
+The Premier League is the top level of the English football league system. Contested by 20 clubs, it operates on a system of promotion and relegation within the English Football League (EFL). Seasons run from August to May with each team playing 38 matches (playing each other home and away).
+
+The final ranking in a season is based on cumulative points where each team get 3 points for a win and 1 for a draw. Below we have calculated the final rankings per season as we wanted to understand how Chelsea has been performing over the last couple of years in the league.
 
 ```{r}
-# Filter the mathches for Roma played at home
-roma_record <- team %>%
-                filter(team_long_name == 'Roma')
+#Creation of the final standings table for each of the 8 seasons
 
-home_matches <- filter(match, home_team_api_id == 
-                         roma_record$team_api_id)
+match_points = match %>%  select(1:11)  %>%  mutate(home_point = if_else((home_team_goal > 
+away_team_goal),3,if_else((home_team_goal == away_team_goal),1,0))) %>% mutate(away_point 
+= if_else((home_team_goal > away_team_goal),0,if_else((home_team_goal == away_team_goal),
+1,3)))
+league_table_home = match_points %>%   group_by(season, league_id, home_team_api_id) %>%  
+summarise(home_points = sum(home_point), home_goals_scored = sum(home_team_goal) , 
+home_goals_conceded = sum(away_team_goal)) 
+league_table_away = match_points %>% group_by(season, league_id, away_team_api_id) %>%   
+summarise(away_points = sum(away_point), away_goals_scored = sum( away_team_goal), 
+away_goals_conceded = sum(home_team_goal))
+league_table = merge ( league_table_home,league_table_away,by.x = c('season', 'league_id', 
+'home_team_api_id') , by.y = c('season', 'league_id' , 'away_team_api_id') , all.x = TRUE)
+league_table = league_table %>% mutate(total_points = home_points + away_points, 
+total_goals_scored =home_goals_scored+away_goals_scored , total_goals_conceded = 
+home_goals_conceded + away_goals_conceded ) %>% filter (league_id == 1729 ) 
 
-# Filter out the required columns for converting 
-# match data to a transaction level
-txn <- home_matches %>% select(id,home_team_goal, away_team_goal)
-
-# Check for NA values and remove rows that 
-# contain NA values
-txn <- na.omit(txn)
-
-# convert the match result to win,loss or draw
-txn$result <- txn$home_team_goal-txn$away_team_goal
-txn$result <- ifelse(txn$result == 0, "Draw", 
-                     ifelse(txn$result > 0, "Win", "Loss"))
-
-win_loss <- txn %>% select(result, id) %>% group_by(result) %>% 
-  summarise(totals = n())
-
-ggplot(win_loss, aes(x= result, y = totals/sum(totals), 
-                     fill=result, legend = F)) + 
-  geom_bar(stat = 'identity') + 
-  scale_y_continuous(labels = scales::percent) + 
-  labs(title="Win Loss percentage for AS Roma", x = "Result",
-       y = "Percentage") + 
-  geom_text(aes(label = round(totals*100/sum(totals),2)))
+# Filter for English Premier League
+league_table = merge( league_table , league , by.x = 'league_id' , by.y = 'country_id', 
+all.x =TRUE  )
+league_table = merge( league_table , team , by.x = 'home_team_api_id' , 
+by.y = 'team_api_id', all.x =TRUE  )
+league_table_final = league_table %>% mutate ( team_api_id = home_team_api_id ) %>% 
+select( c( league_id, name , season,  team_api_id, team_short_name, team_long_name,
+total_goals_scored, total_goals_conceded , home_points, away_points , total_points ) ) %>%
+group_by(league_id,name,season )  %>% mutate(rank = min_rank(desc(total_points))) %>% 
+arrange ( league_id,name ,season, rank )
+league_table_final = league_table %>% mutate ( team_api_id = home_team_api_id ) %>% 
+select (c( league_id, name , season,  team_api_id, team_short_name, team_long_name,
+total_goals_scored, total_goals_conceded , home_points, away_points,
+total_points ) ) %>%  group_by(league_id,name,season )  %>% 
+mutate(rank = min_rank(desc(total_points))) %>% arrange ( league_id,name ,season, 
+rank)
+league_table_final$chelsea_flag = ifelse(league_table_final$team_short_name=='CHE',1,0)
+league_table_final
 ```
 
-```{r data_preparedness, warning = FALSE, message = FALSE}
+Now that we have calculated the final league table for the 8 seasons, we can analyze Chelsea's performance with respect to the other teams in the Premier League.
 
-# data_preparedness
-long_team_name <- 'Roma'
-roma_record <- team_tbl %>% 
-                collect() %>%
-                filter(grepl(long_team_name, team_long_name))
-
-home_matches <- filter(match_tbl, home_team_api_id == 
-                         roma_record$team_api_id)
-
-match_outcomes_per_match <- match_tbl %>% 
-                    mutate(goal_diff =home_team_goal - 
-                             away_team_goal) %>% 
-                    select(id, goal_diff) %>%
-                    rename(match_id = id)
+```{r echo=FALSE, results='hide',message=FALSE}
+#Set graph options
+col1 = "#425274"#blue
+col2 = "#f29c38"#orange
+col3 = "#d3d3d3"#grey
+Theme <- theme_classic()
+```
 
 
-roma_players_per_match <- select(home_matches, 
-                                 id,matches("home_player_[[:digit:]]")) %>%
-                collect() %>%
-                gather(player, player_api_id, -id) %>%
+```{r message=FALSE , fig.width=10}
+#Chelsea league position points , final standing
+ggplot (league_table_final, aes ( x = reorder( team_long_name, -total_points) , 
+y = total_points, fill =factor (chelsea_flag)) )+stat_summary( fun.y = 'mean' , 
+geom  = 'bar')+Theme+theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+scale_fill_manual(guide=F,values=c(col3, col1))+stat_summary(aes(label=round(..y..,0)), 
+fun.y=mean, geom="text", size=3, vjust = -0.5)+ylim ( 0, 100) +   xlab("Team") +  ylab(
+"Average Points") + ggtitle( "Average Points Per Season") +
+  theme(plot.title=element_text(size=20,hjust=0,face="bold",colour="black",vjust=1))+
+   scale_y_continuous(expand = c(0, 0),limits = c(0, 100))
+
+```
+
+We see that on average Chelsea has 75 points per season which is the second best in the league over the 8 season period.
+
+```{r message=FALSE , fig.width=10}
+ggplot (league_table_final, aes ( x = reorder( team_long_name, rank) , y = rank, 
+fill =factor (chelsea_flag)) )+ stat_summary( fun.y = 'mean' , geom  = 'bar')+Theme+ 
+theme(axis.text.x = element_text(angle = 90, hjust = 1)) +   scale_fill_manual(
+guide=F,values=c(col3, col1))+stat_summary(aes(label=round(..y..,0)),   fun.y=mean, 
+geom="text", size=3, vjust = -0.5) + ylim ( 0, 30)+xlab("Team")+ylab("Average Rank")+ 
+ggtitle( "Average Rank Per Season")+
+  theme(plot.title=element_text(size=20,hjust=0,face="bold",colour="black",vjust=1))+
+   scale_y_continuous(expand = c(0, 0),limits = c(0, 30))
+```
+
+We see that across the 8 seasons of data that we have, Chelsea's average league position has been 4th. This highlights the fact that Chelsea is one of the top teams in the league.
+
+```{r}
+ggplot(subset(league_table_final,team_short_name=='CHE'),aes(x=season,y=rank,label=rank))+ 
+geom_line(group =1)+xlab("Season")+ ylab("Rank")+ggtitle( "Chelsea Rank Per Season")+ 
+scale_y_continuous(breaks= pretty_breaks())+geom_text ( nudge_y = .5 ) +Theme+
+annotate("rect",linetype="dotted", xmin=6.5, xmax=8.5, ymin=-.1, ymax=13, color="black",
+  alpha=.1)+
+  theme(plot.title=element_text(size=20,hjust=0,face="bold",colour="black",vjust=1))
+
+```
+
+From this we see that Chelsea's performance has been more or less consistent with the exception of the last season where Chelsea was ranked 10th. This is of great concern and we hope our furthur analysis will help use understand some of the reasons of this poor performance in the last year. We want to deep dive furthur to understand the Win/Loss rate ever season.
+
+```{r}
+matches_che <- subset(match, match$home_team_api_id == 8455)
+matches_che$result<-case_when(matches_che$home_team_goal>matches_che$away_team_goal~"Win",
+matches_che$home_team_goal<matches_che$away_team_goal~"Loss",
+matches_che$home_team_goal==(matches_che$away_team_goal)~"Draw" )
+match_player<-select(matches_che,match_api_id ,season,num_range("home_player_", 1:11), 
+result)
+match_player_long<-gather(match_player,playerno,player_id,-c(match_api_id,result,season))
+match_player_name<-merge(match_player_long,player,by.x="player_id",by.y="player_api_id", 
+all.x = TRUE)
+
+matches_che_a <- subset(match, match$away_team_api_id == 8455)
+matches_che_a$result<-case_when(
+  matches_che_a$home_team_goal>matches_che_a$away_team_goal~"Loss",
+matches_che_a$home_team_goal<matches_che_a$away_team_goal~"Win", 
+matches_che_a$home_team_goal==matches_che_a$away_team_goal~"Draw" )
+match_player_a<-select(matches_che_a,match_api_id,season,num_range("away_player_",1:11),
+result)
+match_player_long_a<-gather(match_player_a, playerno, player_id, -c(match_api_id, result, 
+season))
+match_player_name_a<-merge(match_player_long_a,player,by.x="player_id",
+by.y="player_api_id",all.x = TRUE)
+home_away = rbind(match_player_name_a,match_player_name)
+
+#Player Frequency Table
+player_freq=home_away%>%group_by(player_name,season)%>%summarise(games_played=n())%>%
+  arrange(games_played)
+player_freq_overall = home_away%>%group_by(player_name)%>%summarise(games_played=n())%>%
+  arrange(games_played)
+
+matches_current_season=subset(home_away,home_away$season=='2015/2016')%>% 
+  select(player_name,season)
+matches_current_season = matches_current_season[!duplicated(matches_current_season),]
+
+player_freq_overall =merge(player_freq_overall,matches_current_season,
+by.x ="player_name", by.y = "player_name" , all.x = TRUE)
+player_freq_overall[is.na(player_freq_overall)] <- 0
+
+#Player wins table
+team_wins = home_away %>% select(season , result, match_api_id)
+team_wins = team_wins[!duplicated(team_wins),]
+team_wins_season=team_wins%>%group_by(season,result)%>%summarise(result_season=n())
+
+player_wins=home_away%>%group_by(player_name,season,result)%>%summarise(result_n=n())
+```
+```{r fig.height = 5}
+ggplot(team_wins_season, aes( x = season, y = result_season , fill = result)) + geom_bar(
+stat='identity') +Theme +labs(fill = "Game Result")+xlab("Season")+ylab("No of Games")+
+ggtitle( "Wins/Loss/Draws per Season") + theme(legend.position="bottom") + geom_text(aes(
+label=paste0(round(result_season*100/38),'%')),size=5,position=position_stack(vjust=0.5))+
+  theme(plot.title=element_text(size=20,hjust=0,face="bold",colour="black",vjust=1))+
+  scale_y_continuous(expand = c(0, 0),limits = c(0, 38))
+```
+In the above graph we have the Win/Loss information looking at the Win Loss information we see that in the last season Chelsea the % of games Chelsea won drastically fell by 50% to 12 games which is 32% of the 38 games played.
+
+```{r}
+ggplot(league_table_final,aes ( x = season , y = total_goals_scored) )+ stat_summary(aes(
+color='darblue'),fun.y='mean',size =1,geom ='line',group = 1)+coord_cartesian(ylim=c(
+0, 110)) +geom_line(data =  subset(league_table_final,team_short_name=='CHE'),aes(
+y= total_goals_scored,color = col1),size =1, group= 2) +Theme + annotate("rect", xmin=7.5, 
+xmax=8.5, ymin=35, ymax=85, color="black",linetype="dotted",  alpha=0.1)+xlab("Season") +
+  ylab(
+"Goals Scored")+ggtitle("Chelsea Goals Scored Per Season vs League Average")+geom_text(
+data=subset(league_table_final,team_short_name=='CHE'),  aes(label = total_goals_scored), 
+nudge_y = 2.8)  +    scale_color_discrete(name="Legend",labels=c(
+"Chelsea Goals Scored","Average Leage Goals Scored"))+theme(legend.position="bottom")+
+scale_fill_manual(values=c("#CC9999", "#9999CC"))+
+  theme(plot.title=element_text(size=15,hjust=0,face="bold",colour="black",vjust=1))
+```
+
+Analyzing the goals scored we see that the goals scored by Chelsea have dipped in the last year while the league average increased slightly. We will be deeping into the performance of the strikers down the line.
+
+```{r}
+
+ggplot (league_table_final, aes ( x = season , y = total_goals_conceded) )+ stat_summary(
+aes(col='darblue'), fun.y = 'mean' , size =1,geom  = 'line', group = 1)+ coord_cartesian(
+ylim = c(0, 60)) +geom_line(data =  subset(league_table_final,team_short_name=='CHE'),aes(
+y= total_goals_conceded,color=col1),size =1,group= 2)+Theme+annotate("rect",xmin=7.5,
+xmax=8.5, ymin=40, ymax=62, linetype = 'dashed',color="black", alpha=0.1)+xlab("Season")+ 
+  ylab("Goals Conceded")+
+ggtitle( "Chelsea Goals Conceded Per Season vs League Average") + geom_text(data = subset(
+league_table_final,team_short_name=='CHE'),aes(label=total_goals_conceded),nudge_y=2.8)+
+scale_color_discrete(name = "Legend", labels = c("Chelsea Goals Conceded", 
+"Average Leage Goals Conceded")) + theme(legend.position="bottom")+ scale_fill_brewer(
+palette = "Dark2")+
+  theme(plot.title=element_text(size=15,hjust=0,face="bold",colour="black",vjust=1))
+```
+
+Analyzing the goals conceded last season we see that the last season was the first time that Chelsea conceded more goals than the league average! This suggests that Chelsea's defence did not perform upto expectations and needs to be examined more closely.
+
+```{r fig.height = 10, fig.width = 10}
+player_freq_overall1 <- subset(player_freq_overall, player_freq_overall$games_played>=10)
+ggplot(player_freq_overall1, aes(x= reorder ( player_name, games_played ),y=games_played, 
+fill=season))+geom_bar(stat='identity')+coord_flip()+xlab("Player")+ylab("Games Played")+
+ggtitle("Player Appearences: 8 seasons ")+geom_text(aes(label=games_played),nudge_y=12.8)+
+  scale_color_discrete(name = "Legend", labels = c("Chelsea Goals Conceded",
+"Average Leage Goals Conceded")) +labs(fill="Player Status")+scale_fill_manual(
+  "Player Status",values=c("2015/2016"="#425274",
+"0" = "#009BFF"),labels = c("Non Current Player", "Current Player"))+
+theme(plot.title=element_text(size=20,hjust=0,face="bold",colour="black",vjust=1))+
+  Theme+scale_y_continuous(expand = c(0, 0),limits = c(0, 260))
+```
+From this graph we see that seven of the top 10 players by appearances still play for Chelsea. This shows that our squad is experienced with 7 players playing more than 100 matches for Chelsea.
+
+```{r  fig.height = 15, fig.width = 10}
+
+player_freq_current=subset(player_freq,player_freq$season =='2015/2016' |
+                             player_freq$season=='2014/2015')   
+player_freq_current_plot = spread(player_freq_current,season, games_played)  
+player_freq_current_plot[is.na(player_freq_current_plot)] <- 0
+left_label <- paste(player_freq_current_plot$player_name, round(
+  player_freq_current_plot$`2014/2015`),sep=", ")
+right_label <- paste(player_freq_current_plot$player_name, round(
+  player_freq_current_plot$`2015/2016`),sep=", ")
+player_freq_current_plot$class <- ifelse((player_freq_current_plot$`2014/2015`- 
+player_freq_current_plot$`2015/2016`) < 0, "green", "red")
+
+ggplot(player_freq_current_plot) + geom_segment(aes(x=1, xend=2, y= `2014/2015` ,
+yend=`2015/2016`, col=class), size=1, show.legend=F) + 
+geom_vline(xintercept=1, linetype="dashed", size=.1) + geom_vline(xintercept=2,
+linetype="dashed", size=.1) +  scale_color_manual(labels = c("Up", "Down"), 
+values = c("green"="#00ba38", "red"="#f8766d")) +   labs(x="", y="Games Played") + 
+  xlim(.5, 2.5) + ylim(0,(1.1*(max(player_freq_current_plot$`2014/2015` , 
+player_freq_current_plot$`2015/2016`)))) + geom_text_repel(label=left_label, 
+y= player_freq_current_plot$`2014/2015`, x=rep(1, NROW(player_freq_current_plot)), 
+hjust=1.1, size=3.5)+ geom_text_repel (label=right_label, y=
+                                         player_freq_current_plot$`2015/2016`, 
+x=rep(2, NROW(player_freq_current_plot)), hjust=-0.1, size=3.5) + geom_text(
+  label="Season 14/15",x=1, y=1.1*(max(player_freq_current_plot$`2014/2015` ,
+player_freq_current_plot$`2015/2016`)), 
+hjust=1.2, size=5)  + geom_text(label="Season 15/16", x=2, y=1.1*(max(
+player_freq_current_plot$`2014/2015` , player_freq_current_plot$`2015/2016`)), hjust=-0.1,
+size=5)+theme(panel.background=element_blank(),panel.grid=element_blank(),axis.ticks = 
+element_blank(),axis.text.x = element_blank(),panel.border = element_blank(),
+plot.margin = unit(c(1,2,1,2), "cm")) + ggtitle( 
+"Number of games played: 14/15 season vs 15/16 season") +labs ( subtitle =
+'Players who played the most for Chelsea in 14/15 season play significately less games 
+in the 15/16 season')+
+theme(plot.title=element_text(size=15,hjust=0,face="bold",colour="black",vjust=1))+ 
+theme(plot.subtitle=element_text(size=12, hjust=0, face="italic", color="black"))
+
+```
+
+
+From the above graph we see a very surprising insight, the players who played the most games in the 2014/2015 season for Chelsea have played much fewer games in the 2016/2017. 
+
+```{r echo=FALSE, results='hide',message=FALSE}
+country_tbl <- collect(tbl(con, "country"))
+league_tbl <- collect(tbl(con, "league"))
+match_tbl <- collect(tbl(con, "match"))
+player_tbl <- collect(tbl(con, "player"))
+player_atts_tbl <- collect(tbl(con, "player_attributes"))
+team_tbl <- collect(tbl(con, "team"))
+team_atts_tbl <- collect(tbl(con, "team_attributes"))
+```
+
+```{r echo=FALSE, message=FALSE}
+top_team_name <- c('Chelsea', 'Manchester City', 'Arsenal', "Tottenham Hotspur",
+                   "Liverpool", "Leicester City", 'Southampton', "Manchester United",
+                   "West Ham United", "Everton")
+top_team_id <- c("10260",  "9825", "8650",  "8654", "8456", "8668", "8586", "8455",
+                 "8466",  "8197")
+# Filtering the top 10 teams
+top_team_tbl <- team_tbl %>% filter(team_long_name %in% top_team_name)
+
+#Filtering the match table which has both away and home teams
+top_team_match_tbl <- match_tbl %>% filter(home_team_api_id %in% 
+                                             top_team_tbl$team_api_id |
+                                             away_team_api_id %in% 
+                                             top_team_tbl$team_api_id)
+#Subsetting columns
+top_team_matches <- top_team_match_tbl %>% select(id:away_team_goal,goal:possession)
+#Removing the NA values
+top_team_matches <- top_team_matches[complete.cases(top_team_matches),]
+
+#Getting player and team name details from player and team tables in R
+player_tbl_id_name <- player_tbl %>% select(player_api_id, player_name)
+team_tbl_id_name <- team_tbl %>% select(team_api_id, team_long_name)
+
+# Goal, shot on, shot off ##
+
+# Loop over all matches and put the goal info into a dataframe.
+value_from_xpath  <- function(element, xpath, to.int = F, index = 1) {
+  xml_find_all(element, xpath) %>%
+  {ifelse(length(.), xml_text(.[[index]]), NA)} %>%
+  {ifelse(to.int, as.integer(.), .)}
+}
+node_to_dataframe <- function(n, key) {
+  tibble_(list(
+    id = ~value_from_xpath(n, './id', to.int = T),
+    type = ~value_from_xpath(n, './type'),
+    subtype1 = ~value_from_xpath(n, './subtype'),
+    subtype2 = ~value_from_xpath(n, paste0('./', key, '_type')),
+    player1 = ~value_from_xpath(n, './player1'),
+    player2 = ~value_from_xpath(n, './player2'),
+    team = ~value_from_xpath(n, './team'),
+    lon = ~value_from_xpath(n, './coordinates/value', to.int = T, index = 1),
+    lat = ~value_from_xpath(n, './coordinates/value', to.int = T, index = 2),
+    elapsed = ~value_from_xpath(n, './elapsed', T),
+    elapsed_plus = ~value_from_xpath(n, './elapsed_plus', T)
+  ))
+}
+
+incidents <- map_df(list('goal', 'shoton', 'shotoff', 'cross', 'corner'), function(key) {
+  #incidents <- map_df(list('goal', 'card'), function(key) {
+  top_team_matches %>%
+    filter_(paste0('!is.na(', key, ')')) %>% 
+    select_('id', key) %>%
+    collect() %>% 
+    rename_('value' = key) %>%
+    pmap_df(function(id, value) {
+      xml <- read_xml(value)
+      df  <- xml %>%
+        xml_find_all(paste0('/', key, '/value')) %>%
+        map_df(node_to_dataframe, key)
+      
+      # Add the id of the game as 'foreign key' game_id
+      if (nrow(df) > 0) {
+        if (length(xml_find_all(xml, paste0('/', key, '/value/', key, '_type'))) > 0) {
+          df %<>%
+            rename(tmp = subtype1) %>%
+            rename(subtype1 = subtype2) %>%
+            rename(subtype2 = tmp)
+        }
+        df$game_id  <- id
+      }
+      return(df)
+    })
+})
+
+table1 <- data.frame(incidents)
+
+#Changing the team ID and player ID columns to factors
+table1$team <- as.factor(table1$team)
+team_tbl_id_name$team_api_id <- as.factor(team_tbl_id_name$team_api_id)
+player_tbl_id_name$player_api_id <- as.factor(player_tbl_id_name$player_api_id)
+
+#Merging the incidents with team table to get the team name information
+table2 <- left_join(table1, team_tbl_id_name, by = c("team" = "team_api_id"))
+
+#Merging the incidents with player table to get the player name information
+table3 <- left_join(table2, player_tbl_id_name, by = c("player1" = "player_api_id"))
+table4 <- left_join(table3, player_tbl_id_name, by = c("player2" = "player_api_id"))
+
+finaldf <- data.frame(table4)
+
+```
+
+
+
+
+```{r}
+
+finaldf_non_na <- finaldf[!is.na(finaldf$lat) & !is.na(finaldf$lon), ]
+
+chel_finaldf <- finaldf %>% filter(team_long_name == 'Chelsea', type == 'goal')
+
+player_goals <- chel_finaldf %>% group_by(player_name.x) %>% summarize(goals = length(
+  player_name.x)) %>% arrange(-goals)
+
+player_freq <- read.csv('player_freq_overall.csv', stringsAsFactors = FALSE)
+
+player_goals <- merge(player_goals, player_freq, by.x = 'player_name.x', 
+                      by.y = 'player_name', all.x = TRUE)
+
+player_goals <- player_goals %>% mutate(goal_rate = player_goals$goals / 
+                                          player_goals$games_played) %>% arrange(-goal_rate)
+player_goals$X <- NULL
+
+player_goals_sub <- player_goals %>% filter(
+  games_played > 16 & !is.na(goal_rate)) %>% arrange(-goal_rate) %>% head(20)
+
+```
+
+```{r}
+ggplot(player_goals_sub, aes(x= reorder(player_name.x, goal_rate) , y=goal_rate, fill =
+                               season)) +   geom_bar(stat='identity') + coord_flip() +
+  xlab("Player") + ylab("Goals per match") + 
+  ggtitle("Goals per match - Top 20 players") + geom_text(aes(label= round(goal_rate, 2)),
+                                                          nudge_y=0.035) + 
+  scale_color_discrete(name = "Legend", labels = c("Chelsea Goals Conceded", 
+                                                   "Average Leage Goals Conceded")) + 
+  labs(fill="Player Status") +   theme(plot.title = element_text(hjust = 0)) + 
+  scale_fill_manual("Player Status",values=c("2015/2016"="#425274", "0" = "#009BFF"),
+                    labels = c("Non Current Player", "Current Player"))+Theme+
+  scale_y_continuous(expand = c(0, 0),limits = c(0, .8))
+```
+
+```{r}
+player_assists=chel_finaldf %>% filter(!is.na(player_name.y))%>%group_by(player_name.y)%>%
+  summarize(assists = length(player_name.y)) %>% arrange(-assists)
+
+player_assists <- merge(player_assists, player_freq, by.x = 'player_name.y',
+                        by.y = 'player_name', all.x = TRUE)
+
+player_assists <- player_assists %>% mutate(assist_rate = 
+                                              player_assists$assists /
+                                              player_assists$games_played) %>% arrange(
+                                                -assist_rate)
+player_assists$X <- NULL
+player_assists_sub <- player_assists %>% filter(games_played > 
+                                                  16 & !is.na(assist_rate)) %>% 
+  arrange(-assist_rate) %>% head(20)
+```
+
+
+```{r}
+ggplot(player_assists_sub, aes(x= reorder(player_name.y, assist_rate) , y=assist_rate,
+fill = season)) + geom_bar(stat='identity') + coord_flip() + xlab("Player") +
+  ylab("Assists per match") + ggtitle("Assists per match - Top 20 players") + 
+  geom_text(aes(label= round(assist_rate, 2)),nudge_y=0.025) + 
+  scale_color_discrete(name = "Legend", labels = c("Chelsea Goals Conceded",
+  "Average Leage Goals Conceded")) + labs(fill="Player Status") + 
+  theme(plot.title = element_text(hjust = 0)) + scale_fill_manual("Player Status",
+  values=c("2015/2016"="#425274", "0" = "#009BFF"),
+  labels = c("Non Current Player", "Current Player"))+Theme+
+  scale_y_continuous(expand = c(0, 0),limits = c(0, .6))
+
+```
+
+```{r echo=FALSE, results='hide',message=FALSE}
+
+con <- src_sqlite("euro_soccer.sqlite")
+
+country_tbl <- collect(tbl(con, "country"))
+league_tbl <- collect(tbl(con, "league"))
+match_tbl <- collect(tbl(con, "match"))
+player_tbl <- collect(tbl(con, "player"))
+player_atts_tbl <- collect(tbl(con, "player_attributes"))
+team_tbl <- collect(tbl(con, "team"))
+team_atts_tbl <- collect(tbl(con, "team_attributes"))
+```
+
+
+As the first step we are filtering the Match attributes table for Chelsea for home and away matches.
+
+```{r echo=FALSE, results='hide',message=FALSE}
+long_team_name <- 'Chelsea'
+
+# Filtering for Chelsea in the team table
+myteam_team_tbl <- team_tbl %>% filter(grepl(long_team_name, team_long_name))
+home_matches <- match_tbl %>% filter(home_team_api_id == myteam_team_tbl$team_api_id) %>%
+  mutate(result = ifelse(home_team_goal > away_team_goal, "Win", ifelse(home_team_goal <
+away_team_goal, "Loss", "Draw")))
+away_matches <- match_tbl %>% filter(away_team_api_id == myteam_team_tbl$team_api_id) %>%
+  mutate(result = ifelse(home_team_goal > away_team_goal, "Loss", ifelse(home_team_goal <
+away_team_goal, "Win", "Draw")))
+all_matches <- rbind(home_matches, away_matches)
+```
+
+
+
+
+```{r}
+all_matches_last2 <- all_matches %>% mutate(loc = ifelse(home_team_api_id == 8455,
+  "home", "away")) %>% filter(season %in% c('2014/2015', '2015/2016'))
+
+a <- table(all_matches_last2$result, all_matches_last2$loc)
+
+chisq.test(a)
+
+```
+
+
+# C. Association Rules
+
+***Rationale***
+
+We see that there was a huge performance gap in the last two seasons and that there was a significant number of transfers and injuries between these two seasons and players changes drastically from season 14 to season 15. We would like to understand if certain combinations of players led to a performance gap between these two seasons.
+
+## 1. Does player combinatins impact match result?
+
+_Comparing 2014 and 2015 seasons to understand the impact of player combinations_
+
+
+
+***Analysis***
+
+Our first aim was to analyze the player combinations and match result for both seasons individually. We used the apriori algorithm for frequent itemset mining and association learning to derive player associations. We consider both the home and away matches that Chelsea played in these seasons. We used market basket analysis and rules were created for player combinations and result considering a match as a transaction to understand what combinations of players lead to a win or lose on the RHS.
+
+[Read here for in-depth understanding of market basket](https://select-statistics.co.uk/blog/market-basket-analysis-understanding-customer-behaviour/)
+
+***Defining metrics used in the analysis*** 
+
+**Support:** The percentage of transactions that contain all of the items.  The higher the support the more frequently the row occurs.   
+
+**Confidence:** The probability that a transaction that contains the items on the left-hand side of the rule also contains the item on the right-hand side.   
+
+**Lift:**  lift is the ratio of confidence to expected confidence. It is a measure of how often does LHS appear with RHS, compared to what chance would predict  
+
+
+[Source for the definitions](https://select-statistics.co.uk/blog/market-basket-analysis-understanding-customer-behaviour/)
+(https://bicorner.com/2015/07/22/what-the-heck-are-association-rules-in-analytics/)  
+
+### 1.1 Which player combinations worked in 2014?
+
+***Data preparation for Association rules***
+
+Step 1 - Creating a subset for Home matches
+```{r}
+matches_che <- subset(match, match$home_team_api_id == 8455 & (season == '2014/2015' ))
+matches_che$result<-case_when(matches_che$home_team_goal>matches_che$away_team_goal~"Win",
+                              matches_che$home_team_goal<matches_che$away_team_goal~"Loss", matches_che$home_team_goal==matches_che$away_team_goal~"Draw" )
+match_player<-select(matches_che,match_api_id ,num_range("home_player_", 1:11), result)
+match_player_long<-gather(match_player, playerno, player_id, -c(match_api_id))
+match_player_name<-merge(match_player_long,player,by.x = "player_id", by.y = "player_api_id" ,
+                         all.x = TRUE)
+match_player_name$arules_input = case_when( !is.na(match_player_name$player_name
+           ) ~ match_player_name$player_name , is.na(match_player_name$player_name
+                                                     ) ~ match_player_name$player_id)
+```
+Step 2. Creating a subset for Away matches
+```{r}
+matches_che_a <- subset(match, match$away_team_api_id == 8455 & (season == '2014/2015'))
+matches_che_a$result<-case_when(matches_che_a$home_team_goal>matches_che_a$away_team_goal~"Loss",
+                                matches_che_a$home_team_goal<matches_che_a$away_team_goal~"Win", matches_che_a$home_team_goal==matches_che_a$away_team_goal~"Draw" )
+match_player_a<-select(matches_che_a,match_api_id ,num_range("away_player_", 1:11), result)
+match_player_long_a<-gather(match_player_a, playerno, player_id, -c(match_api_id))
+match_player_name_a<-merge(match_player_long_a,player,by.x = "player_id", by.y = "player_api_id" ,
+                           all.x = TRUE)
+match_player_name_a$arules_input = case_when( !is.na(match_player_name_a$player_name
+    ) ~ match_player_name_a$player_name , is.na(match_player_name_a$player_name
+                                                ) ~ match_player_name_a$player_id)
+```
+Step 3. Combining Home and  away matches
+```{r}
+
+home_away = rbind(match_player_name_a,match_player_name)
+```
+Step 4. Association rules for home and away matches for 2014
+
+***Analysis of wins***
+
+We analyzed the rules which were had a win on the RHS to understand what combinations were most impactful in 2014. 
+
+```{r}
+trans <- as(split(home_away[,"arules_input"], home_away[,"match_api_id"]), "transactions")
+rules <- apriori(trans,parameter=list(supp = 0.1 , conf=0.1))
+rules_win <- subset (rules, subset = (rhs %pin% "Win") & (lift>1) )
+rules_win_loss_draw <- subset (rules, subset =( (rhs %pin% "Win")|(rhs %pin% "Loss")|(
+  rhs %pin% "Draw")) & (lift>1) ) 
+rule_win_df = data.frame(
+       lhs = labels(lhs(rules_win)),
+       rhs = labels(rhs(rules_win)),
+       rules_win@quality)
+rule_win_df = rule_win_df[with(rule_win_df, order(-rule_win_df$lift, -rule_win_df$support)), ]
+plot(rules_win, measure=c("support", "lift"), shading="confidence", jitter = 5)
+```
+
+***Interpretation***
+
+We analyzed the rules which were had a win on the RHS to understand what combination highest lift obtained was 1.46, highest support was 0.65 and the highest confidence was 1. But we observed that there were 1109 rules that had the same confidence and lift, and combined with the fact that Chelsea won the in that season, we believe these were too many rules to provide any substantial insight.ns were most impactful in 2014. 
+
+We hence used the grouped matrix plot** of rules to analyze the rules clusters that were interesting.
+
+**Grouped matrix-based visualization ( [Hahsler2016](https://pdfs.semanticscholar.org/8122/bce5088d40a9510aabd8e36d2c07f5ea5fe0.pdf)). Antecedents (columns) in the matrix are grouped using clustering. Groups are represented by the most interesting item (highest ratio of support in the group to support in all rules) in the group. Balloons in the matrix are used to represent with what consequent the antecedents are connected.
+
+```{r fig.height=6}
+plot(rules_win, method="grouped", measure="support")
+```
+
+*Figure : The size of the bubbles represents support and the <span style="color:red">intensity of the color represent lift</span>*
+
+***Interpretation***
+
+We see that groups with high lift included players Petr Chec and Dridier Drogba.
+Both these players, Petr Chec (goalkeeper) and Drogba (striker) left Chelsea after the 2014 season. Hence, our next step was to understand which players replaced the striker and goalkeeper in 2015 and how did their combination with other players work out.
+
+### 1.2 What changed in 2015?
+
+***Data preparation for Association rules*** 
+
+Step 1 - Creating a subset for Home matches
+```{r}
+## Chelase Team ID is 8455
+
+matches_che_2015 <- subset(match, match$home_team_api_id == 8455 & (season == '2015/2016' ) )
+matches_che_2015$result<-case_when(matches_che_2015$home_team_goal>
+matches_che_2015$away_team_goal~"Win",
+matches_che_2015$home_team_goal<matches_che_2015$away_team_goal~"Loss", 
+matches_che_2015$home_team_goal==matches_che_2015$away_team_goal~"Draw" )
+
+match_player_2015<-select(matches_che_2015,match_api_id ,num_range("home_player_", 1:11), result)
+match_player_long_2015<-gather(match_player_2015, playerno, player_id, -c(match_api_id))
+
+match_player_name_2015<-merge(match_player_long_2015,player,by.x = "player_id",
+by.y = "player_api_id" , all.x = TRUE)
+match_player_name_2015$arules_input = case_when( !is.na(match_player_name_2015$player_name
+              ) ~ match_player_name_2015$player_name , is.na(match_player_name_2015$player_name
+                                                             ) ~ match_player_name_2015$player_id)
+
+```
+Step 2. Creating a subset for Away matches
+```{r}
+matches_che_a_2015 <- subset(match, match$away_team_api_id == 8455 & (season == '2015/2016'))
+matches_che_a_2015$result<-case_when(matches_che_a_2015$home_team_goal>
+matches_che_a_2015$away_team_goal~"Loss",
+matches_che_a_2015$home_team_goal<matches_che_a_2015$away_team_goal~"Win",
+matches_che_a_2015$home_team_goal==matches_che_a_2015$away_team_goal~"Draw" )
+match_player_a_2015<-select(matches_che_a_2015,match_api_id ,num_range("away_player_", 1:11),
+                            result)
+match_player_long_a_2015<-gather(match_player_a_2015, playerno, player_id, -c(match_api_id))
+match_player_name_a_2015<-merge(match_player_long_a_2015,player,by.x = "player_id", 
+                                by.y = "player_api_id" , all.x = TRUE)
+match_player_name_a_2015$arules_input = case_when( !is.na(match_player_name_a_2015$player_name
+) ~ match_player_name_a_2015$player_name , is.na(match_player_name_a_2015$player_name
+                                              ) ~ match_player_name_a_2015$player_id)
+```
+Step 3. Combining Home and  away matches
+```{r}
+
+home_away_2015 = rbind(match_player_name_a_2015,match_player_name_2015)
+```
+Step 4. Association rules for home and away matches for 2014
+
+***Analysis of wins***
+
+```{r echo = FALSE, message=FALSE}
+trans_2015 <- as(split(home_away_2015[,"arules_input"], home_away_2015[,"match_api_id"]), "transactions")
+rules_2015 <- apriori(trans_2015,parameter=list(supp = 0.1 , conf=0.1))
+rules_win_2015 <- subset (rules_2015, subset = (rhs %pin% "Win") & (lift>1) )
+rules_win_loss_draw_2015 <- subset (rules_2015, subset =( (rhs %pin% "Win")|(
+  rhs %pin% "Loss")|(rhs %pin% "Draw")) & (lift>1) ) 
+rule_win_df_2015 = data.frame(
+       lhs = labels(lhs(rules_win_2015)),
+       rhs = labels(rhs(rules_win_2015)),
+       rules_win_2015@quality)
+rule_win_df_2015 = rule_win_df_2015[with(rule_win_df_2015, order(-rule_win_df_2015$lift,
+-rule_win_df_2015$support)), ]
+plot(rules_win_2015, measure=c("support", "lift"), shading="confidence", jitter = 5)
+```
+
+
+```{r fig.height=6}
+plot(rules_win_loss_draw_2015, method="grouped", measure="support",
+main = "Grouped matrix plot for 2015 Wins, Losses and Draws")
+```
+
+*Figure : The size of the bubbles represents support and the <span style="color:red">intensity of the color represent lift</span>*
+
+***Interpretation***
+
+
+The above matrix plot shows that the combinations that contained Ramires and Asmir Begovic have the highest lift when looking at a 'Loss' in the RHS.We see that there is a possibility that the change in goalkeeper from Petr Chec to Asmir Begovic might have had an impact in the performance as the goals conceded was a major contributor to degraded performance.
+We hence analyzed the goals conceded per match for each of the goalkeepers to understand whether it was indeed the replacement that had an impact on the goals conceded.
+
+```{r warning =FALSE}
+matches_g_che <- subset(match, match$home_team_api_id == 8455)
+matches_g_che_a <- subset(match, match$away_team_api_id == 8455)
+
+match_player_g<-select(matches_g_che,season,match_api_id ,num_range("home_player_",
+1:11),away_team_goal )
+match_player_g_a<-select(matches_g_che_a,season,match_api_id ,num_range("away_player_",
+1:11),home_team_goal )
+
+match_player_long_g<-gather(match_player_g, playerno, player_id, -c(match_api_id,season,
+                                                                    away_team_goal))
+match_player_long_g_a<-gather(match_player_g_a,playerno,player_id,-c(match_api_id,season,
+home_team_goal))
+
+player_g=subset(match_player_long_g,match_player_long_g$player_id%in%c(30859,
+170323,46518))  
+
+player_g_a = subset(match_player_long_g_a, match_player_long_g_a$player_id %in% c(30859,
+170323,46518))  
+player_g_goals = player_g %>% group_by(season, player_id ) %>% summarise(
+goals_conceded = sum(away_team_goal), n = n())
+player_g_goals_a = player_g_a %>% group_by(season, player_id ) %>% summarise(
+goals_conceded = sum(home_team_goal), n = n())
+player_g_final = rbind(player_g_goals,player_g_goals_a)
+player_g_final = player_g_final %>% group_by( season, player_id ) %>% summarise(
+goals_conceded = sum(goals_conceded ) , n = sum(n) ) 
+player_g_final<-merge(player_g_final,player,by.x = "player_id", by.y = "player_api_id" ,
+all.x = TRUE)
+player_g_final_plot=player_g_final%>%mutate(goals_conceded_game=round(goals_conceded/n,
+2)) %>% 
+filter ( season == '2014/2015' | season == '2015/2016')
+
+
+ggplot( player_g_final_plot , aes( x =season , y = goals_conceded_game, label = 
+goals_conceded_game) ) + geom_bar(aes(fill = player_name),
+position = "dodge", stat="identity") +
+geom_text(position = position_dodge(width= 0.975), aes(y=goals_conceded_game+0.25,
+fill=player_name,label=goals_conceded_game, hjust=0.5, vjust = 3))+ scale_fill_manual(
+"legend",
+values = c("Asmir Begovic" = "blue", "Petr Cech" = "orange", "Thibaut Courtois"="grey")) +
+labs(title = "Goals Conceded Per Match For Goal Keepers", subtitle = "Seasons 2014 - 2015",
+y = "Goals conceeded per match")+Theme+
+scale_y_continuous(expand = c(0, 0))
+``` 
+```{r fig.width = 8}
+matches_g_che <- subset(match, match$home_team_api_id == 8455)
+matches_g_che_a <- subset(match, match$away_team_api_id == 8455)
+match_player_g<-select(matches_g_che,season,match_api_id ,num_range("home_player_",
+                                                                    1:11),away_team_goal )
+match_player_g_a<-select(matches_g_che_a,season,match_api_id ,num_range("away_player_",
+1:11),home_team_goal )
+match_player_long_g<-gather(match_player_g, playerno, player_id, -c(match_api_id,season,
+                                                                    away_team_goal))
+match_player_long_g_a<-gather(match_player_g_a, playerno, player_id, -c(match_api_id,season,
+                                                                        home_team_goal))
+
+player_g = subset(match_player_long_g, match_player_long_g$player_id %in% c(23783,30627,
+31306,72541,281207))  
+player_g_a = subset(match_player_long_g_a, match_player_long_g_a$player_id %in% c(23783,
+30627,31306,72541,281207))  
+player_g_goals = player_g %>% group_by(season, player_id ) %>% summarise(
+goals_conceded = sum(
+away_team_goal), n = n())
+player_g_goals_a = player_g_a %>% group_by(season, player_id ) %>% summarise(
+goals_conceded = sum(
+home_team_goal), n = n())
+
+player_g_final = rbind(player_g_goals,player_g_goals_a)
+
+player_g_final = player_g_final %>% group_by( season, player_id ) %>% summarise(
+goals_conceded = sum(
+goals_conceded ) , n = sum(n) ) 
+player_g_final<-merge(player_g_final,player,by.x = "player_id", by.y = "player_api_id" ,
+all.x = TRUE)
+player_d_final_plot = player_g_final %>% mutate(goals_conceded_game = round(
+goals_conceded/n,2)) %>% 
+filter ( season == '2015/2016')
+ggplot( player_d_final_plot , aes( x =reorder(player_name,goals_conceded_game ,
+function(x) -(x)) , y = goals_conceded_game, 
+label = goals_conceded_game) ) + geom_bar(aes(fill = player_name),
+position = "dodge", stat="identity")+Theme+ 
+scale_fill_manual("legend", values = c("Gary Cahill" = "blue", "John Terry" = "grey",
+"Branislav Ivanovic" = "grey",
+"Kurt Zouma" = "grey","Cesar Azpilicueta" = "grey")) +
+labs(title = "Goals Conceded Per Match For Defenders", subtitle = "Seasons 2015/2016",
+y = "Goals conceeded per match", x= "Player")
+```
+
+
+
+
+***Interpretation***
+
+Asmir Begovic in the last two seasons has conceded 1.6 goals per match while Chec conceeded 0.33 goals per match.
+We can hence conclude that goalkeeper replacement had an impact on performance and recommend that Asmir Begovic is replaced with a keeper whose characteristics match Petr Chec.
+
+Goals conceded can also be impacted by a weak defensive line. This led us to analyze the defender's combinations for both the seasons to understand what is the best combination for defenders and what combinations do not work.
+
+### 2. Using association rules to mine for winning player combinations
+
+#### 2.1 What is the best defence line?
+
+***Analysis for defenders***
+
+Association mining using apriori algorithm for defenders for the season 2015. We are trying to understand the combination of defenders that leads to wins and what combinations of players that generally results in a loss.
+
+
+```{r}
+#Home
+matches_che <- subset(match, match$home_team_api_id == 8455 & (season == '2015/2016' ) )
+matches_che$result<-case_when(matches_che$home_team_goal>matches_che$away_team_goal~"Win",
+matches_che$home_team_goal<matches_che$away_team_goal~"Loss",
+matches_che$home_team_goal==matches_che$away_team_goal~"Draw" )
+match_player<-select(matches_che,match_api_id ,num_range("home_player_", 1:11), result)
+match_player_long<-gather(match_player, playerno, player_id, -c(match_api_id))
+match_player_name<-merge(match_player_long,player,by.x = "player_id",
+by.y = "player_api_id" ,
+all.x = TRUE)
+match_player_name = subset ( match_player_name , match_player_name$player_id %in% c( 
+23783,281207,30627,31306,324910,72541, 41167, 'Draw' ,'Loss' ,'Win'))
+match_player_name$arules_input = case_when( !is.na(match_player_name$player_name
+) ~ match_player_name$player_name , is.na(
+match_player_name$player_name) ~ match_player_name$player_id)
+
+#Away team
+matches_che_a <- subset(match, match$away_team_api_id == 8455 & (season == '2015/2016'))
+
+matches_che_a$result<-case_when(matches_che_a$home_team_goal>
+                                  matches_che_a$away_team_goal~"Loss",
+matches_che_a$home_team_goal<matches_che_a$away_team_goal~"Win", 
+matches_che_a$home_team_goal==matches_che_a$away_team_goal~"Draw" )
+
+match_player_a<-select(matches_che_a,match_api_id ,num_range("away_player_", 1:11), result)
+match_player_long_a<-gather(match_player_a, playerno, player_id, -c(match_api_id))
+match_player_name_a<-merge(match_player_long_a,player,
+by.x = "player_id", by.y = "player_api_id" , 
+all.x = TRUE)
+
+match_player_name_a = subset ( match_player_name_a , match_player_name_a$player_id %in% c( 
+  23783,281207,30627,31306,324910,72541, 41167, 'Draw' ,'Loss' ,'Win'))
+
+match_player_name_a$arules_input = case_when( !is.na(match_player_name_a$player_name
+                  ) ~ match_player_name_a$player_name , is.na(
+                  match_player_name_a$player_name) ~ match_player_name_a$player_id)
+
+#Union away and home
+home_away = rbind(match_player_name_a,match_player_name)
+trans <- as(split(home_away[,"arules_input"], home_away[,"match_api_id"]), "transactions")
+
+# Running Apriori algorithm
+rules <- apriori(trans,parameter=list(supp = 0.1 , conf=0.1))
+
+```
+
+***Analysis of loss***  
+
+We use a paracoord graph** here to show all the combinations that show high confidence when the RHS is a loss
+
+**Parallel coordinates plots are designed to visualize multidimensional data where each dimension is displayed separately on the x-axis and the y-axis is shared. Each data point is represented by a line connecting the values for each dimension. Parallel coordinates plots were used previously to visualize discovered classification rules (Han, An, and Cercone 2000) and association rules (Yang 2003). Yang (2003) displays the items on the y-axis as nominal values and the x-axis represents the positions in a rule, i.e., first item, second item, etc. Instead of a simple line, an arrow is used where the head points to the consequent item. Arrows only span enough positions on the x-axis to represent all the items in the rule, i.e., rules with fewer items are shorter arrows
+
+[Reading on paracoord graph](https://cran.r-project.org/web/packages/arulesViz/vignettes/arulesViz.pdf)
+
+```{r fig.caption = "The width of the arrows represents support and the intensity of the color represent confidence"}
+## Loss
+loss_rules<-subset(rules, subset = rhs %pin% "Loss" & lift>=1)
+plot(loss_rules,method = "paracoord",control= list(
+  main = "Paracoord graph for losses in 2015-16 season (Defenders)"))
+```
+
+*The width of the arrows represents support and the <span style="color:red">intensity of the color represent confidence</span>*
+
+***Interpretation***
+
+We see from the paracoord graph that all the combinations that show high confidence when the RHS is a loss includes Gary Cahill.
+And the combination of defense line shown here that leads to loss is John Terry, Cesar Azpilicueta, Gary Cahill. We hence wanted to compare the combinations that resulted in the loss to the combinations that resulted in wins
+
+***Comparing wins to loss for defence***
+
+We subset the RHS of the rules for wins and loss and sort the rules by lift.
+
+```{r fig.align='center', fig.width=12, fig.height=11}
+#Winning
+win_rules<-subset(rules, subset = rhs %pin% "Win" )
+rule_win_df = data.frame(
+       lhs = labels(lhs(win_rules)),
+       rhs = labels(rhs(win_rules)),
+       win_rules@quality)
+rule_win_df<-rule_win_df[order(-rule_win_df$lift),]
+
+rule_win_df$colors<-case_when(rule_win_df$lhs == '{John Terry,Kurt Zouma}'~"one",
+rule_win_df$lhs == '{Branislav Ivanovic,Cesar Azpilicueta,John Terry,
+Kurt Zouma}'~ 'two', TRUE ~ "three")
+
+loss_rules<-subset(rules, subset = rhs %pin% "Loss" )
+rule_loss_df = data.frame(
+       lhs = labels(lhs(loss_rules)),
+       rhs = labels(rhs(loss_rules)),
+       loss_rules@quality)
+rule_loss_df<-rule_loss_df[order(-rule_loss_df$lift),]
+
+rule_loss_df$colors<-case_when(rule_loss_df$lhs == '{Gary Cahill,Kurt Zouma}'~"one",
+rule_loss_df$lhs == '{Gary Cahill,John Terry}'~'two', TRUE~'three')
+
+p1<-ggplot( rule_win_df , aes( x = reorder(lhs,lift) , y = lift, fill = colors,
+                               label = lift )) + geom_bar(stat="identity") + coord_flip() +
+scale_fill_manual(values = c("orange", "gray70","midnightblue")) +
+theme(legend.position="None") +
+labs(title = "Rules for wins in 2015-2016", y= "lift", x = "Rules",
+subtitle = "Rules are sorted by lift") 
+p2<-ggplot( rule_loss_df , aes( x = reorder(lhs,lift) , y = lift,fill = colors,
+label = lift) ) +geom_bar(stat="identity") + coord_flip()+
+scale_fill_manual(values = c("orange", "gray70","orange")) +
+theme(legend.position="none")+ labs(title = "Rules for losses in 2015-2016", y= "lift",
+x = "Rules", subtitle = "Rules are sorted by lift")
+
+grid.arrange(p1, p2,  ncol = 2, nrow = 1)
+```
+
+
+***Interpretation***
+
++ <span style="color:orange">(in yellow)</span> Pairing John Terryup better with Kurt Zouma compared to Gary Cahill-Terry and that the combination Zouma-Cahill has a very high loss lift.   
+
++  The combination <span style="color:blue">(in blue)</span> Branislav Ivanovich, Cesar Azpilicueta, John Terry and Kurt Zouma as the four defenders has the highest win lift. 
+ That is, we are 1.15 times more likely to win when Branislav Ivanovich, Cesar Azpilicueta, John Terry and Kurt Zouma play as the defenders,   compared to other matches.
+ On further exploration we found that this combination has only 4 out of 38 matches in the season. It could be that using the wrong  combination of players in the defence line led to a weak defence and hence higher goals conceeded.
+
++ Cahill have more than 1.5 times chance of losing matches over random chance in all combination.
+
+ Poor performance in the season can also be attributed to low goals scored.  We now analyze the mid-fielders and striker combinations to find  out which team is optimal.
+
+#### 2.2 What is the best combination of mid-fielders and strikers?
+
+***Analysis for mid fielders and strikers***
+
+Association mining using apriori algorithm for mid-fielders and strikers for the seasons 2014 and 2015. We are trying to understand the combination that leads to wins and what combinations of players that generally results in a loss.
+We are using the combination of attacking mid-fielders and strikers. We use the cordinates to subset for the attacking mid-fielders.
+
+```{r}
+#Home
+matches_che <- subset(match, match$home_team_api_id == 8455 & (season == '2015/2016' ) )
+matches_che$result<-case_when(matches_che$home_team_goal>matches_che$away_team_goal~"Win",
+matches_che$home_team_goal<matches_che$away_team_goal~"Loss",
+matches_che$home_team_goal==matches_che$away_team_goal~"Draw" )
+
+match_player<-select(matches_che,match_api_id ,num_range("home_player_", 1:11), result)
+match_player_long<-gather(match_player, playerno, player_id, -c(match_api_id))
+match_player_name<-merge(match_player_long,player,by.x = "player_id", by.y = "player_api_id" ,
+                         all.x = TRUE)
+
+match_player_name=subset(match_player_name,match_player_name$player_id%in%c(30613,
+79574,94086,	107417,	128864,	150250,	155066,	178812,	467354,	604982,	19243,
+22543,30679,	30822,	30853,	33639,	35411,	37804,	39987,	46554,	51553,
+181276,	292462,303059, 'Draw' ,'Loss' ,'Win'))
+match_player_name$arules_input = case_when( !is.na(match_player_name$player_name
+                      ) ~ match_player_name$player_name , is.na(
+                      match_player_name$player_name) ~ match_player_name$player_id)
+
+#Away team
+matches_che_a <- subset(match, match$away_team_api_id == 8455 & (season == '2015/2016'))
+
+matches_che_a$result<-case_when(matches_che_a$home_team_goal>
+                                  matches_che_a$away_team_goal~"Loss",
+matches_che_a$home_team_goal<matches_che_a$away_team_goal~"Win", 
+matches_che_a$home_team_goal==matches_che_a$away_team_goal~"Draw" )
+
+match_player_a<-select(matches_che_a,match_api_id ,num_range("away_player_",1:11),result)
+match_player_long_a<-gather(match_player_a, playerno, player_id,
+-c(match_api_id))
+match_player_name_a<-merge(match_player_long_a,player,by.x = "player_id",
+by.y = "player_api_id" ,
+all.x = TRUE)
+
+match_player_name_a = subset ( match_player_name_a , match_player_name_a$player_id %in% c(
+30613,
+79574,94086,	107417,	128864,	150250,	155066,	178812,	467354,	604982,	19243,	22543,
+30679,30822,	30853,	33639,	35411,	37804,	39987,	46554,	51553,	181276,	292462,
+303059,'Draw' ,'Loss' ,'Win'))
+
+match_player_name_a$arules_input = case_when( !is.na(match_player_name_a$player_name
+) ~ match_player_name_a$player_name , is.na(match_player_name_a$player_name
+) ~ match_player_name_a$player_id)
+
+#Union away and home
+home_away = rbind(match_player_name_a,match_player_name)
+trans <- as(split(home_away[,"arules_input"], home_away[,"match_api_id"]),
+            "transactions")
+
+# Running Apriori algorithm
+rules <- apriori(trans,parameter=list(supp = 0.1 , conf=0.1))
+
+```
+
+
+
+
+***Analysis of loss***  
+
+We use a paracoord graph here to show all the combinations that show high confidence when the RHS is a loss
+
+```{r fig.caption = "The width of the arrows represents support and the intensity of the color represent confidence"}
+## Loss
+loss_rules<-subset(rules, subset = rhs %pin% "Loss" & lift>=1)
+plot(loss_rules,method = "paracoord",control= list(
+  main = "Losses in 2015-16 season (Mid-fielders and Strikers)"))
+```
+
+*The width of the arrows represents support and the <span style="color:red">intensity of the color represent confidence</span>*
+
+***Interpretation***
+
+We see from the paracoord graph that all the combination Ramires and Willian played has a very high confidence for loss. We also see that the combination Willian - Ramires Hazard has a high confidence for loss. We hence wanted to divide the data into win vs loss and see the difference
+
+***Comparing wins to loss***
+
+We subset the RHS of the rules for wins and loss and sort the rules by lift.
+
+```{r fig.align='center', fig.width=12, fig.height=11}
+#Winning
+win_rules<-subset(rules, subset = rhs %pin% "Win" )
+rule_win_df = data.frame(
+       lhs = labels(lhs(win_rules)),
+       rhs = labels(rhs(win_rules)),
+       win_rules@quality)
+rule_win_df<-rule_win_df[order(-rule_win_df$lift),]
+
+rule_win_df$colors<-case_when(rule_win_df$lhs == '{Cesc Fabregas,Diego Costa,
+                              Eden Hazard,Pedro Rodriguez,Willian}' ~ "one", TRUE ~ "two")
+
+loss_rules<-subset(rules, subset = rhs %pin% "Loss" )
+rule_loss_df = data.frame(
+       lhs = labels(lhs(loss_rules)),
+       rhs = labels(rhs(loss_rules)),
+       loss_rules@quality)
+rule_loss_df<-rule_loss_df[order(-rule_loss_df$lift),]
+
+rule_loss_df$colors<-case_when(rule_loss_df$lhs == '{Diego Costa,Eden Hazard,Ramires,
+Willian}'~"one", TRUE~'three')
+
+#plot(win_rules, method="grouped", measure="support") 
+#plot(win_rules,method = "paracoord", measure = "lift")
+p1<-ggplot( rule_win_df , aes( x = reorder(lhs,lift) ,
+                               y = lift, fill = colors, label = lift )) +
+  geom_bar(stat="identity") + coord_flip() +scale_fill_manual(values = c(
+    "midnightblue","gray70")) + theme(legend.position="none") + labs(
+      title = "Wins in 2015-2016", y= "lift", x = "Rules",
+      subtitle = "Rules are sorted by lift") 
+
+
+p2<-ggplot( rule_loss_df , aes( x = reorder(lhs,lift) ,
+                                y = lift,fill = colors, label = lift) ) +
+  geom_bar(stat="identity") + coord_flip()+scale_fill_manual(values = c(
+    "orange","gray70")) +  theme(legend.position="none")+ labs(
+      title = "Losses in 2015-2016", y= "lift", x = "Rules",
+      subtitle = "Rules are sorted by lift")
+
+grid.arrange(p1, p2,  ncol = 2, nrow = 1)
+```
+
+***Interpretation***
+
+We see that <span style="color:blue">(in blue)</span> Diego costa as the striker with Cesc Fabregas,Eden Hazard,Pedro Rodriguez or Willian
+as the attacking mid-fielders have 2.6 times chance of winning a match compared to all matches in general.
+
+While, the combination <span style="color:orange">(in yellow)</span> with Ramires in the attacking position with Costa as the striker has more than 3 time chance of losing comapred to random chance.
+
+We can hence say that any three from the combination - Cesc Fabregas,Eden Hazard,Pedro Rodriguez or Willian is a best fit when Diego costa is the Striker and that Ramires should not be paired up with Costa.
+
+#### 2.3 Conclusion
+
+From 2.1 and 2.3 we can say that certain player combination might have an impact on the match result.
+** The following will be the combination with highest chance of winning - **
+
+** Strikers **
+Diego Costa
+
+** Mid field **
+Eden Hazard, Willian, Pedro Rodríguez , Nemanja Matic, Cesc Fàbregas
+
+** Defenders **
+John Terry , Branislav Ivanovic,Kurt Zouma, César Azpilicueta
+
+** GoalKeeper **
+Thibaut Courtois
+
+## C. Does player positions impact match result?
+### 1. Analysing 2015 season to understand the impact of player positioning
+
+
+***Rationale***
+
+Analyzing groups like mid-fielders and defenders might not provide a complete picture without taking into account the positions in which these players play in since we see that players play in multiple positions over time. We hence analyzed mid-fielders and defenders separately for player positioning to result.
+
+#### 1.1 Mid-fielder positiong
+
+***Analysis***
+
+We got the cordinate information for each player-position of mid-fielders and used the apripori algorithm to look for rules that result in a win or loss
+
+```{r}
+## Top teams
+## home matches
+match1<-collect(match_tbl)
+matches_home <- subset(match1, (match1$home_team_api_id == 8455) & ((
+  match1$season  == '2015/2016')))
+matches_home$result<-case_when(matches_home$home_team_goal>matches_home$away_team_goal~"won",
+matches_home$home_team_goal<matches_home$away_team_goal~"lost",
+matches_home$home_team_goal==matches_home$away_team_goal~"draw" )
+match_player<-select(matches_home,match_api_id ,home_team_api_id,away_team_api_id,
+                     num_range("home_player_", 1:11),num_range("home_player_X", 1:11),
+                     num_range("home_player_Y", 1:11), result)
+
+## away matches
+match2<-collect(match_tbl)
+matches_away <- subset(match2, (match2$away_team_api_id == 8455) & ((
+  match2$season  == '2015/2016')))
+matches_away$result<-case_when(matches_away$home_team_goal<matches_away$away_team_goal~"won",
+matches_away$home_team_goal>matches_away$away_team_goal~"lost",
+matches_away$home_team_goal==matches_away$away_team_goal~"draw" )
+match_player_away<-select(matches_away,match_api_id ,home_team_api_id,
+away_team_api_id,num_range("away_player_", 1:11),num_range(
+"away_player_X", 1:11),num_range("away_player_Y", 1:11), result)
+
+## home games 
+playerName<-match_player %>% 
+  as.data.frame %>%
+  select(match_api_id, home_team_api_id, away_team_api_id,result,num_range(
+    "home_player_", 1:11))%>%
+  melt(., id = c('match_api_id', "home_team_api_id","away_team_api_id", "result"))%>%
+  select(match_api_id, home_team_api_id, away_team_api_id,result,variable,value)
+
+playerX<-match_player %>% 
+  as.data.frame %>%
+  select(match_api_id, home_team_api_id, away_team_api_id,result,num_range(
+    "home_player_X", 1:11))%>%
+  melt(., id = c('match_api_id', "home_team_api_id","away_team_api_id", "result"))%>%
+  select(variable, value)
+
+playerY<-match_player %>% 
+  as.data.frame %>%
+  select(match_api_id, home_team_api_id, away_team_api_id,result,num_range(
+    "home_player_Y", 1:11))%>%
+  melt(., id = c('match_api_id', "home_team_api_id","away_team_api_id", "result"))%>%
+  select(variable, value)
+
+player_home<-cbind(playerName,playerX,playerY)
+names(player_home)<-c("match_api_id","Chelsea","against","result","player",
+                      "player_id","playerx","player_xposn","playery","player_yposn")
+player_home<-select(player_home, match_api_id, result,against,player_id,player_xposn,
+                    player_yposn)
+player_home$type<-"Home"
+
+
+## getting player names
+
+player_home<-merge(player_home,player,by.x = "player_id", by.y = "player_api_id")
+player_home<-merge(player_home,team,by.x = "against", by.y = "team_api_id")
+home_games<- select(player_home,match_api_id,result,team_long_name,player_name,player_id,
+player_xposn,player_yposn)
+home_games$playerposn<-paste(home_games$player_name, home_games$player_xposn,
+home_games$player_yposn,
+sep = "-")
+home_games$val<-1
+
+
+## Away games 
+
+## getting position for each player for home games
+playerNameAway<-match_player_away %>% 
+  as.data.frame %>%
+  select(match_api_id, home_team_api_id, away_team_api_id,result,num_range("away_player_",
+  1:11))%>%
+  melt(., id = c('match_api_id', "home_team_api_id","away_team_api_id", "result"))%>%
+  select(match_api_id, home_team_api_id, away_team_api_id,result,variable,value)
+
+playerXaway<-match_player_away %>% 
+  as.data.frame %>%
+  select(match_api_id, home_team_api_id, away_team_api_id,result,num_range("away_player_X",
+  1:11))%>%
+  melt(., id = c('match_api_id', "home_team_api_id","away_team_api_id", "result"))%>%
+  select(variable, value)
+
+playerYaway<-match_player_away %>% 
+  as.data.frame %>%
+  select(match_api_id, home_team_api_id, away_team_api_id,result,num_range("away_player_Y",
+  1:11))%>%
+  melt(., id = c('match_api_id', "home_team_api_id","away_team_api_id", "result"))%>%
+  select(variable, value)
+
+player_away<-cbind(playerNameAway,playerXaway,playerYaway)
+names(player_away)<-c("match_api_id","against","chelsea","result","player","player_id",
+"playerx",
+"player_xposn","playery","player_yposn")
+player_away<-select(player_away, match_api_id, result,against,player_id,player_xposn,
+player_yposn)
+player_away$type<-"Away"
+
+
+## getting player names
+
+player_away<-merge(player_away,player,by.x = "player_id", by.y = "player_api_id")
+player_away<-merge(player_away,team,by.x = "against", by.y = "team_api_id")
+away_games<- select(player_away, match_api_id,result,team_long_name,player_name,player_id, 
+                    player_xposn,player_yposn)
+away_games$playerposn<-paste(away_games$player_name, away_games$player_xposn,
+                             away_games$player_yposn, sep = "-")
+away_games$val<-1
+
+
+## combining home and away 
+
+home_away_games<-rbind(home_games, away_games)
+write.csv(home_away_games,"Home_away_games_14-15.csv")
+
+## filtering for mid-fielders 
+
+midfielders<-c(115067,	155066,	107417,	30613,	128864,	178812,	94086,	150250,
+               604982,	32345,	467354,	79574)
+home_away_games_mid_fielders<-subset(home_away_games,player_id %in% midfielders )
+
+```
+
+```{r}
+## table for AR rules for player positiion
+
+### creating table for arules
+
+home_games_wide1<-home_away_games_mid_fielders%>%
+  select(match_api_id, playerposn,val)%>%
+  spread(playerposn,val, fill = 0)
+
+home_games_wide2<-home_away_games_mid_fielders%>%
+  select(match_api_id, result,val)%>%
+  distinct%>% 
+  spread(result,val, fill = 0)
+
+
+ap_in<-merge(home_games_wide1,home_games_wide2, by = "match_api_id")
+trans<- as(as.matrix(ap_in[, -1]), 'transactions')
+
+rules <- apriori(trans,parameter=list(support = 0.1,conf=0.1))
+
+```
+***Comparing wins to losses***
+```{r fig.align='center', fig.width=15, fig.height=11}
+#Winning
+win_rules<-subset(rules, subset = rhs %pin% "won" )
+
+rule_win_df = data.frame(
+       lhs = labels(lhs(win_rules)),
+       rhs = labels(rhs(win_rules)),
+       win_rules@quality)
+rule_win_df<-rule_win_df[order(-rule_win_df$lift),]
+
+rule_win_df$colors<-ifelse(rule_win_df$lhs == 
+                             '{Cesc Fabregas-6-6,Willian-5-8}' | rule_win_df$lhs == '
+                           {Cesc Fabregas-6-6,Eden Hazard-7-8,Nemanja Matic-4-6,
+                           Pedro Rodriguez-3-8}' , "one" ,"two")
+loss_rules<-subset(rules, subset = rhs %pin% "lost" )
+rule_loss_df = data.frame(
+       lhs = labels(lhs(loss_rules)),
+       rhs = labels(rhs(loss_rules)),
+       loss_rules@quality)
+rule_loss_df<-rule_loss_df[order(-rule_loss_df$lift),]
+
+rule_loss_df$colors<-ifelse(rule_loss_df$lhs == '{Eden Hazard-7-8,
+Nemanja Matic-6-6,Ramires-4-6}'
+|rule_loss_df$lhs == '{Cesc Fabregas-5-8,Eden Hazard-7-8}',"one", "two")
+
+p1<-ggplot( rule_win_df , aes( x = reorder(lhs,lift) , y = lift, fill = colors,
+label = lift )) +
+geom_bar(stat="identity") + coord_flip() +scale_fill_manual(values = c(
+"midnightblue","gray70")) +
+theme(legend.position="none") + labs(title = "Wins in 2015-2016", y= "lift",
+x = "Rules",
+subtitle = "Rules are sorted by lift")
+
+p2<-ggplot( rule_loss_df , aes( x = reorder(lhs,lift) , y = lift,fill = colors,
+label = lift) ) +
+geom_bar(stat="identity") + coord_flip()+scale_fill_manual(values = c("orange",
+"gray70")) +
+theme(legend.position="none")+labs(title = "Losses in 2015-2016",y= "lift",x ="Rules",
+subtitle = "Rules are sorted by lift")
+grid.arrange(p1, p2,  ncol = 2, nrow = 1)
+```
+
+***Interpretation***
+
+
++ For Cesc Fabrigaz  (6,6) is a winning position with a win lift of 1.85. On contraty, him playing at (4,6) has a loss lift of 1.25. 
+
++ At central mid field position ((4,6),(6,6)) Fabregas and Mattic is the best possible combination. 
+
++ Willian playing (5,8) has higher chance of winning than Willian playing (3,8) 
+
++ Combination of Pedro Rodrigues (3,8),Eden Hazard (7,8),Nemanja Matic (4,6), Cesc Fàbregas (6,6) had twice the chance of winning over Chelsea average win rate
+
+
+
+```{r fig.align='center', fig.width = 12}
+library(ggplot2)
+library(gridExtra)
+x_win<-c(3,4,5,6,7)
+y_win<-c(8,6,8,6,8)
+p_win<-c("Pedro","Matic","Willian","Fabregaz","Hazard")
+p_loss<-c("Willian","Ramires","Fabregaz","Matic","Hazard")
+
+wins<-as.data.frame(cbind(x_win,y_win,p_win))
+plt1<-ggplot(wins, aes(x = x_win, y = y_win, color = p_win, label = p_win)) +
+geom_text(aes(label=p_win), size=8) + labs(title= "Winning mid-field squad",
+x = "player x position", y = "player y position") + 
+theme(legend.position="none") 
+
+loss<-as.data.frame(cbind(x_win,y_win,p_loss))
+plt2<-ggplot(loss, aes(x = x_win, y = y_win, color = p_loss, label = p_loss)) +
+geom_text(
+aes(label=p_loss), size=8) + labs(title= "losing mid-field squad",
+x = "player x position",
+y = "player y position") + theme(legend.position="none")
+
+grid.arrange(plt1, plt2,  ncol = 2)
+
+
+```
+
+***Interpretation***
+
+The above figure is a representation of winning squd on the left and losing on the right. The colors for the players can be used to understand how their position changes.
+
+#### 1.2 Defender positiong
+
+***Analysis***
+
+We joined the player names to x and y position of defenders and used the apripori algorithm to look for rules that result in a win or loss
+
+````{r fig.align='center', fig.width=15, fig.height=11}
+## filtering for defenders positions 
+
+defenders<-c(23783,281207,30627,31306,324910,72541, 41167)
+home_away_games_defenders<-subset(home_away_games,player_id %in% defenders )
+
+## table for AR rules for player positiion
+
+### creating table for arules
+
+home_games_wide1<-home_away_games_defenders%>%
+  select(match_api_id, playerposn,val)%>%
+  spread(playerposn,val, fill = 0)
+
+home_games_wide2<-home_away_games_defenders%>%
+  select(match_api_id, result,val)%>%
+  distinct%>% 
+  spread(result,val, fill = 0)
+
+
+ap_in<-merge(home_games_wide1,home_games_wide2, by = "match_api_id")
+trans<- as(as.matrix(ap_in[, -1]), 'transactions')
+
+rules <- apriori(trans,parameter=list(support = 0.1,conf=0.1))
+
+#Winning
+win_rules<-subset(rules, subset = rhs %pin% "won" )
+
+rule_win_df = data.frame(
+       lhs = labels(lhs(win_rules)),
+       rhs = labels(rhs(win_rules)),
+       win_rules@quality)
+rule_win_df<-rule_win_df[order(-rule_win_df$lift),]
+
+rule_win_df$colors<-ifelse(rule_win_df$lhs == '{Cesc Fabregas-6-6,Willian-5-8}' | 
+                             rule_win_df$lhs == '{Cesc Fabregas-6-6,Eden Hazard-7-8,
+                           Nemanja Matic-4-6,Pedro Rodriguez-3-8}' , "one" ,"two")
+loss_rules<-subset(rules, subset = rhs %pin% "lost" )
+rule_loss_df = data.frame(
+       lhs = labels(lhs(loss_rules)),
+       rhs = labels(rhs(loss_rules)),
+       loss_rules@quality)
+rule_loss_df<-rule_loss_df[order(-rule_loss_df$lift),]
+
+rule_loss_df$colors<-ifelse(rule_loss_df$lhs == '{Eden Hazard-7-8,
+                            Nemanja Matic-6-6,Ramires-4-6}'|rule_loss_df$lhs == '{
+                            Cesc Fabregas-5-8,Eden Hazard-7-8}',"one", "two")
+
+#plot(win_rules, method="grouped", measure="support")
+#plot(win_rules,method = "paracoord", measure = "lift")
+p1<-ggplot( rule_win_df , aes( x = reorder(lhs,lift) , y = lift, 
+                               fill = colors, label = lift )) + geom_bar(stat="identity") +
+  coord_flip() +scale_fill_manual(values = c("midnightblue","gray70")) + 
+  theme(legend.position="none") + labs(title = "Wins in 2015-2016", y= "lift", x = "Rules",
+                                       subtitle = "Rules are sorted by lift")
+
+
+p2<-ggplot( rule_loss_df , aes( x = reorder(lhs,lift) , y = lift,fill = colors, label = lift) ) + 
+  geom_bar(stat="identity") + coord_flip()+scale_fill_manual(values = c("orange","gray70")) +
+  theme(legend.position="none")+ labs(title = "Losses in 2015-2016", y= "lift", x = "Rules",
+                                      subtitle = "Rules are sorted by lift")
+
+grid.arrange(p1, p2,  ncol = 2, nrow = 1)
+```
+
+***Interpretation***
+
++ We see that <span style="color:green">(in green)</span>, that the center back pairing(cordinates:(6,3),(4,3)) of **Zouma (4,3) and Terry(6,3) ** contributes to higher chance of winning over the combination of **Zouma (4,3) and Cahill(6,3) **. 
+
++ Eventhough Aspilicueta plays better at (2,3), the defence line seems to be stronger when Ivanovic is at (2,3) with Azpilicueta at (8,3), Zouma at (4,3) and Terry at (6,3) <span style="color:blue">(in blue)</span>,
+
+
+#### 1.3 Final squad
+```{r}
+x_win<-c(3,4,5,6,7,5,5,1,4,6,8)
+y_win<-c(8,6,8,6,8,9,1,3,3,3,3)
+p_win<-c("Pedro","Matic","Willian","Fabregaz","Hazard","Costa","Coutois","Ivanovic",
+         "Zouma","Terry","Azpellicueta")
+position <- c('M','M','M','M','M','S','G','D','D','D','D')
+wins<-as.data.frame(cbind(x_win,y_win,p_win))
+plt_1<-ggplot(wins, aes(x = x_win, y = y_win,color =position, label = p_win)) +
+  geom_text(aes(label=p_win), size=5) + labs(title= "Winning Squad",x = "player x position",
+                                             y = "player y position") + 
+  theme(legend.position="none") 
+plt_1
+
+#Pedro Rodrigues (3,8),Eden Hazard (7,8),Nemanja Matic (4,6), Cesc Fàbregas (6,6)
+```
+
+
+
+
+
+
+
+# D. Cluster Analysis
+
+While our analyses above gave insights on which players perform better from the existing squad, we will have to rethink our strategy in case some of the existing players move out or a new player comes in. Segmenting existing players into groups will provide direction on which player to purchase and also, where the new player might play. 
+
+To accomplish this, we had created a clustering algorithm which takes the player's game attributes, his age and his playing position (defender/midfielder/striker). Based on the clusters, we can identify which new player might replace an existing player, if the new player had not played for Chelsea before. 
+
+```{r echo=FALSE, results='hide',message=FALSE}
+
+con <- src_sqlite("euro_soccer.sqlite")
+
+country_tbl <- collect(tbl(con, "country"))
+league_tbl <- collect(tbl(con, "league"))
+match_tbl <- collect(tbl(con, "match"))
+player_tbl <- collect(tbl(con, "player"))
+player_atts_tbl <- collect(tbl(con, "player_attributes"))
+team_tbl <- collect(tbl(con, "team"))
+team_atts_tbl <- collect(tbl(con, "team_attributes"))
+```
+
+
+As the first step we are filtering the Match attributes table for Chelsea for home and away matches.
+
+```{r}
+long_team_name <- 'Chelsea'
+
+# Filtering for Chelsea in the team table
+myteam_team_tbl <- team_tbl %>% filter(grepl(long_team_name, team_long_name))
+home_matches <- match_tbl %>% filter(home_team_api_id == myteam_team_tbl$team_api_id) %>%
+  mutate(result = ifelse(home_team_goal > away_team_goal, "Win", ifelse(home_team_goal <
+away_team_goal, "Loss", "Draw")))
+away_matches <- match_tbl %>% filter(away_team_api_id == myteam_team_tbl$team_api_id) %>%
+  mutate(result = ifelse(home_team_goal > away_team_goal, "Loss", ifelse(home_team_goal <
+away_team_goal, "Win", "Draw")))
+all_matches <- rbind(home_matches, away_matches)
+```
+
+
+Next we identifying players for each match.
+
+```{r}
+# List of players for home matches
+home_matches_players <- select(home_matches, id, date, season, result, matches(
+  "home_player_[[:digit:]]")) %>%
+                gather(player, player_api_id, -id, -date, -result, -season) %>%
                 rename(match_id = id)
 
-team_tbl <- home_matches %>% 
-            mutate(goal_diff = home_team_goal - away_team_goal) %>% 
-            select(match_api_id,home_team_api_id,away_team_api_id,goal_diff) %>%
-            mutate(result = ifelse(goal_diff >0, 'win', 
-                                   ifelse(goal_diff < 0, 
-                                          'loss', 'tie'))) %>%
-            select(home_team_api_id,away_team_api_id,result)
+home_matches_players$loc <- "home"
+names <- names(home_matches_players)
 
-write.csv(team_tbl,file = 'team.csv')
+# List of players for away matches
+away_matches_players <- select(away_matches, id, date, season, result, matches(
+  "away_player_[[:digit:]]")) %>% gather(player, player_api_id,-id,-date,-result,-season
+                                         ) %>% rename(match_id = id)
+
+away_matches_players$loc <- "away"
+
+# List of all Chelsea players
+all_matches_players <- rbind(home_matches_players, away_matches_players)
+
+all_players <- all_matches_players %>% select(player_api_id) %>% distinct()
+all_players <- merge(all_players, player_tbl[, c("player_api_id", "player_name")], by = 
+                       "player_api_id")
 ```
 
-## Which teams do we have advantages over?
-```{r,message = FALSE,warning = FALSE, echo = FALSE}
-# Generate rules
-team_tran <- read.transactions('team.csv',format=c("basket"),sep=",", 
-                               rm.duplicates=TRUE,skip = 1)
-
-rules <- apriori(team_tran,parameter=list(supp = 0.015, 
-                                          conf=0.01,
-                                          minlen = 3),
-                 appearance = list(rhs = c('win','loss','tie')))
-
-# summary(rules)
-# 
-# inspect(rules)
-# 
-# rules <- sort(rules,by="lift",decreasing=TRUE)
-
-rules <- sort(rules,by="confidence",decreasing=TRUE)
-inspect(rules[1:5])
-```
-
-
-## Visualize results
-
-1. Rules Table:
+Obtaining the player positions from the web for the list of players that played in Chelsea. Writing out the player names and reading the updated file with positions
+ + G for Goalkeeper
+ + S for Striker
+ + M for Midfielder 
+ + D for Defender
 
 ```{r}
-inspect(rules[1:5]) 
-
+# Reading Chelsea player positions file (S, D, M, G)
+all_player_position <- read.csv('home_players_position.csv', stringsAsFactors = FALSE)
+table(all_player_position$position)
 ```
 
-2. Interactive Visualization of Rules
+Getting attributes of Chelsea players from the player attributes table
 
 ```{r}
-plot(rules,method="graph", shading=NA)
-```
-
-
-## Findings and insights
-
-1. Our client won 64% of matches and tied in another 24%. 
-
-2. Our Team (Id: 8686) has overwhelming advantages over team Lecce (Id: 9888), Sassuolo (Id: 7943), Torino (Id:9804) and Genoa (Id:10233) in that we don't lose historically to them.
-
-3. For other 15 teams, we have over 50% of chance to win on average. These are a good start to research why we won sometimes and we lost the other. 
-
-4. Admittedly, the number of records for some rules is not large enough to approximate probability based on proportion. However, our purpose, again, is to find a rational perspective to delve into. And we don't recommend to use this number to predict future odds of success.
-
-## Conclusion
-
-Based on historical performance, we believe, our client has some advantages over other teams considering the changes in our teammates. We defeated them in the majority of past matches. 
-
-Next step, as we mentioned earlier, is to delve into what key performance indicators can significantly influence the result of a match.
-
-
-# Our Solutions
-
-## Solution 1: Optimizing player combinations
-
-### Why does the combination of players matter?
-  The question we would like to answer here is if we can find a combination of player that is more likely to make the team Win. The variable we can control while selecting a team is the players in the playing XI for each match. Hence we decided to start our analysis with a key factor that can be leveraged to maximize winning probability. 
-
-### Our approach for home matches:
-
-  First, we looked at home matches for this analysis because there are significant differences in winning percentages due to hidden factors betweem home and away, and we want to keep the analysis consistent (**Assumption**). Based on the number of goals scored by the home team and away team in each match, we decided if the result was a Win, Loss or Draw. Then, applied association rule mining to find out if there are any occurrences for players in the match that result in a win. To do so we defined our transaction as each match played and the item set as the list of players in playing XI plus match result.
-
-### Analysis for home matches:
-
-```{r warning =FALSE}
-
-# Filter the mathches for Roma played at home
-roma_record <- team %>%
-                filter(team_long_name == 'Roma')
-
-home_matches <- filter(match, home_team_api_id == roma_record$team_api_id)
-
-# Filter out the required columns for converting match data to a transaction level
-txn <- home_matches %>% select(home_team_goal, away_team_goal, 
-                               home_player_1:home_player_11)
-
-# Check for NA values and remove rows that contain NA values
-txn <- na.omit(txn)
-
-# convert the match result to win,loss or draw
-txn$result <- txn$home_team_goal-txn$away_team_goal
-txn$result <- ifelse(txn$result == 0, "Draw", 
-                     ifelse(txn$result > 0, "Win", "Loss"))
-
-# Removing redundant columns from data
-txn <- txn[,-c(1,2)]
-
-# write the dataframe to csv inorder to read as transactions
-write.csv(txn, "txn.csv")
-
-# read back as transactions
-txn_final <- read.transactions("txn.csv",format=c("basket"),sep=",", 
-                               rm.duplicates=TRUE)
+# Attriubtes for Chelsea players
+all_player_attributes <- player_atts_tbl %>% filter(
+  player_api_id %in% all_players$player_api_id)
 
 ```
+We know whats here
+There are 3 missing values for all the scoring attributes like dribbling to gk_diving
 
+Generating a matrixplot to identify where the missing values are present
 
-```{r warning =FALSE}
-# Checking for player id combination which results in a WIN
-rules <- apriori(txn_final,appearance = list(rhs = c('Win')),
-                 parameter=list(supp = 0.05, conf=0.8, 
-                                minlen = 5, maxlen = 7))
+Values are missing for the same record across all attributes. Filtering records for those players alone to understand the missing values
 
-# Restricting the output format for lift, confidence and support to 2 decimals
-options(digits=2)
-
-# Sorting the rules by parameter lift
-rules <- sort(rules,by="lift",decreasing=TRUE)
-
+```{r}
+null_id <- all_player_attributes[is.na(all_player_attributes$gk_diving), "player_api_id"]
+all_player_attributes_null <- all_player_attributes %>% filter(player_api_id %in%
+                                                          null_id$player_api_id) %>% 
+  arrange(player_api_id, date)
 ```
 
+The missing values are from duplicates of an existing record. Since, we have attributes of players for the corresponding dates, we can delete the NA records
 
-```{r warning =FALSE}
-# Filtering rules which are of interest 
-inspect(head(rules,5))
+```{r}
+all_player_attributes <- all_player_attributes %>% filter(!is.na(gk_diving))
+
+# Updated summary of the player attributes to confirm there are no missing values
+summary(all_player_attributes)
 ```
 
+Adding season to the dates in which the players were assigned these attributes. This enables us to map the player's attributes with the matches corresponding to the season in which he played in. 
 
-```{r warning =FALSE}
+```{r}
+# Identifying season
+all_player_attributes$season<-as.numeric(ceiling((lubridate::date(all_player_attributes$date)- 
+                                                      as.Date('2008-07-01')) / 365))
+all_player_attributes$season <- ifelse(all_player_attributes$season <= 0, 1, 
+                                       all_player_attributes$season)
+all_player_attributes$season <- paste(all_player_attributes$season + 2007,
+                                      all_player_attributes$season + 2008, sep = "/")
 
-# Checking for player id combination which result in a LOSS
-rules <- apriori(txn_final,appearance = list(rhs = c('Loss')),
-                 parameter=list(supp = 0.015, conf=0.5, minlen = 4))
-
-# Restricting the output format for lift, confidence 
-# and support to 2 decimals
-options(digits=2)
-
-# Sorting the rules by parameter lift
-rules <- sort(rules,by="lift",decreasing=TRUE)
-inspect(rules[1:5])
+table(all_matches_players$season)
+table(all_player_attributes$season)
 ```
 
-### Findings and insights for home matches:
+Since there are multiple values for a player per season for 20 players, taking an average of their metrics for that season
 
-  Varying the parameters, support, and confidence, while using the rule mining algorithm apriori we got an optimal number of rules in order to further investigate which combinations of players results in a win and loss. When we look at the top rules based on the lift, we are able to find the combination of players who can either increase or decrease the chance of winning a match. As the number of data points we have was limited, we had to trade-off support in order to get association rules of interest which have match result as the RHS in the rule. 
+```{r}
+agg_player_attribute=all_player_attributes%>%select(-preferred_foot,-attacking_work_rate,
+-defensive_work_rate, -id, -player_fifa_api_id, -date) %>% group_by(
+  player_api_id, season) %>% summarise_all(mean)
+```
 
-### Recommendation for home matches:
+Identifying list of players by season and mapping their position and physical attributes
 
-  Assuming that this roster of players(who played from 2008-2016) will be available for future team selection, now we can use arules to make sure we have certain combinations of players that will increase the probability of the team winning a match and also avoid combinations of players that would increase the chance of losing a match.
+```{r}
+plyr_season_map <- all_matches_players[, c("player_api_id", "season")]
+plyr_season_map <- plyr_season_map[!duplicated(plyr_season_map), ]
+
+# Getting player position attributes (G, S, D, M) and physical attributes
+agg_player_attribute_sub <- merge(merge(merge(agg_player_attribute, plyr_season_map), 
+all_player_position[, c(1, 3)]), player_tbl[, c('player_api_id', 'birthday', 'height', 
+'weight')])
+
+# QC
+table(plyr_season_map$season)
+table(agg_player_attribute_sub$season)
+
+# Adding age column and ordering 
+agg_player_attribute_sub$age<-as.numeric(floor((as.Date('2008-07-01')-lubridate::date(
+  agg_player_attribute_sub$birthday)) / 365)) + as.numeric(substr
+(agg_player_attribute_sub$season, 1, 4)) - 2007
+agg_player_attribute_sub$birthday <- NULL
+agg_player_attribute_sub$id <- paste(agg_player_attribute_sub$player_api_id,
+                                     agg_player_attribute_sub$season, sep = '-')
+agg_player_attribute_sub <- agg_player_attribute_sub[order(
+  agg_player_attribute_sub$player_api_id, agg_player_attribute_sub$season), ]
+```
+
+There are over 35 attributes for each player. Combining them into groups will simplify interpretation and the reduction of dimensions in the data. The average of the metrics for each group was taken as the simplified representation. 
+The following groups were constructed with the corresponding attributes:  
+
+  * Attacking - Crossing, Finishing, Heading Accuracy, Short Passing and Volleys
+  * Defensive - Marking, Standing Tackle and Sliding Tackle
+  * Goalkeeper - GK Diving, GK Kicking, GK Handling, GK Positioning and GK Reflexes
+  * Metality - Aggression, Interceptions, Positioning, Vision and Penalties
+  * Movement - Acceleration, Sprint Speed, Agility, Reactions and Balance
+  * Power - Shot Power, Jumping, Stamina, Strength and Long Shots
+  * Skill - Dribbling, Curve, Free Kick Accuracy, Long Passing and Ball Control 
+
+```{r}
+# Feature engineering by creating derived metrics to caputure gameplay of the player
+agg_player_attribute_sub<-agg_player_attribute_sub%>%mutate(attacking=(
+  crossing + finishing + heading_accuracy + short_passing + volleys) / 5
+  , movement = (acceleration + sprint_speed + agility + reactions + balance) / 5
+  , skill = (dribbling +curve + free_kick_accuracy + long_passing + ball_control) / 5,
+  defensive = (marking +standing_tackle + sliding_tackle) / 3, mentality = (aggression +
+  interceptions + positioning + vision + penalties) / 5, goalkeeper = (gk_diving +
+  gk_kicking + gk_handling + gk_positioning +gk_reflexes) / 5, power = (shot_power +
+  jumping + stamina + strength + long_shots) / 5) 
+
+# Subsetting for required columns only
+player_attributes <- agg_player_attribute_sub %>% select(player_api_id, season, 
+id, position,overall_rating, potential, height, weight, age, attacking, movement,
+skill, defensive, mentality, goalkeeper, power) 
+summary(player_attributes)
+```
+
+Assuming that there are groups of players within each player type who exhibit similar behaviour within the group, and different behaviours across the groups, we can cluster players within the player types. Therefore, we can find clusters for strikers, defenders and midfielders. Since there are very few goalkeepers who had played for Chelsea across the years, we can focus on looking at only the strikers, defenders and midfielders. 
+These clusters would be useful in understanding who might make a better replacement in case an existing player is leaving the squad or injured. 
+
+We have to normalize the data in order to cluster because there are certain attributes which are distriubted over different values. 
+
+```{r}
+# Min-Max normalization function
+normalize <- function(x){
+  return ((x - min(x))/(max(x) - min(x)))}
+
+# Identifying player types for sequential running
+positions_for_loop <- c('D', 'M', 'S')
+
+# Identifying the best k value from the elbow charts
+for (i in 1:length(positions_for_loop))
+{
+  # Subsetting for the player type
   
-
-### Our Approach for away matches:
-  Now that we know how we can help improve our team's win probability at home, we also wanted to look at the combination of players that will improve the teams chance of winning away from home. We wanted to see if there are different combinations of players while playing away from home compared to at home that result in a win. So we went ahead to analyze the matches which AS Roma played away from home. (*Hypothesis*) Away matches are different from home matches when selecting the best team players
-
-
-### Our Analysis for away matches:
-```{r}
-
-# Filter the mathches for Roma played at home
-roma_record <- team %>%
-                filter(team_long_name == 'Roma')
-
-away_matches <- filter(match, away_team_api_id == roma_record$team_api_id)
-
-# Filter out the required columns for converting match data to a transaction level
-txn <- away_matches %>% select(home_team_goal, away_team_goal, 
-                               away_player_1:away_player_11)
-
-# Check for NA values and remove rows that contain NA values
-txn <- na.omit(txn)
-
-# convert the match result to win,loss or draw
-txn$result <- txn$away_team_goal-txn$home_team_goal
-txn$result <- ifelse(txn$result == 0, "Draw", ifelse(txn$result > 0, 
-                                                     "Win", "Loss"))
-
-# Removing redundant columns from data
-txn <- txn[,-c(1,2)]
-
-# write the dataframe to csv inorder to read as transactions
-write.csv(txn, "txn.csv")
-
-# read back as transactions
-txn_final <- read.transactions("txn.csv",format=c("basket"),sep=",", 
-                               rm.duplicates=TRUE)
-
-```
-
-
-```{r}
-# Checking for player id combination which results in a WIN
-rules <- apriori(txn_final,appearance = list(rhs = c('Win')),
-                 parameter=list(supp = 0.04, 
-                                conf=0.7, minlen = 5, maxlen = 7))
-
-# Restricting the output format for lift, 
-# confidence and support to 2 decimals
-options(digits=2)
-
-# Sorting the rules by parameter lift
-rules <- sort(rules,by="lift",decreasing=TRUE)
-inspect(rules[1:5])
-```
-
-
-
-
-```{r}
-
-# Checking for player id combination which result in a LOSS
-rules <- apriori(txn_final,appearance = list(rhs = c('Loss')),
-                 parameter=list(supp = 0.03, conf=0.7, minlen = 4))
-
-# Restricting the output format for lift, confidence 
-# and support to 2 decimals
-options(digits=2)
-
-# Sorting the rules by parameter lift
-rules <- sort(rules,by="lift",decreasing=TRUE)
-
-```
-
-
-```{r}
-# Filtering rules which are of interest 
-inspect(head(rules,5))
-```
-
-
-### Findings and insights for away matches:
-
-Looking at the results it is clear that the combination of players for an away match is different from home matches. This is in support of the hypothesis made before starting this analysis.  
-
-### Recommendation for away matches:
+  player_subset <- player_attributes %>% filter(position == positions_for_loop[i])
   
-Clearly, the performance of players away from home is different when compared to home matches. We can leverage arules to make sure we have the right combinations of players that will increase the probability of the team winning a match and also avoid combinations of players that would increase the chance of losing a match while choosing a team for matches played away from home.
+  # Normalizing the data
+  data_normalized = mutate(player_subset,
+                           overall_rating = normalize(overall_rating), 
+                           potential = normalize(potential), 
+                           height = normalize(height), 
+                           weight = normalize(weight), 
+                           age = normalize(age), 
+                           attacking = normalize(attacking), 
+                           movement = normalize(movement), 
+                           skill = normalize(skill), 
+                           defensive = normalize(defensive), 
+                           mentality = normalize(mentality), 
+                           goalkeeper = normalize(goalkeeper), 
+                           power = normalize(power))
+  
+  # Selecting the required columns for clustering
+  norm_for_clust <- data_normalized %>% select(-player_api_id, -position, -season, -id
+                                               , -height,-weight, -goalkeeper)
+  rownames(norm_for_clust) <- data_normalized$id
+  
+  # k-means clustering to find the best k 
+  SSE_curve <- c()
+  for (n in 1:10) {
+    kcluster <- kmeans(norm_for_clust, n)
+    #print(kcluster$withinss)
+    sse <- sum(kcluster$withinss)
+    SSE_curve[n] <- sse
+  }
+  # Plotting the SSE Curve for identifying k
+  eval(parse(text = paste('plot(1:10, SSE_curve, type="b", xlab="Number of Clusters",ylab="SSE", 
+                          main = "Cluster for ', '")',sep     =positions_for_loop[i])))
+}
+```
 
-## Solution 2: Pinpoint the position on the field for key players
 
-### Why does the player on field position matter?
+Based on the elbow curve, the following k values have been chosen for each player type:  
 
-It is common in football that a player usually has multiple on-field positions while playing for a match. Does one position increase/decrease the chance of winning a match compared to other? To answer this we combined player id with the player on field position and applied association rules. 
+  * Strikers - 2 clusters
+  * Defenders - 3 clusters 
+  * Midfielders - 3 clusters
 
-### Our approach 
+```{r}
+# Obtaining the clusters for the different positions
+cluster_k_values <- c(3, 3, 2)
+player_cluster <- NULL 
 
-The question we are going to answer here is, can we find a combination of player and position that is more likely to make the team win. The scenario we can control while selecting a team is the players and their position in the playing XI for each match. We are expecting to get arules which differ in support, confidence and lift for a player with different on-field position indicating which is the most/least favorable position.
+# Creating the clusters using the k-values obtained above
+for (i in 1:length(positions_for_loop))
+{
+  player_subset <- player_attributes %>% filter(position == positions_for_loop[i])
+  data_normalized = mutate(player_subset,
+                           overall_rating = normalize(overall_rating), 
+                           potential = normalize(potential), 
+                           height = normalize(height), 
+                           weight = normalize(weight), 
+                           age = normalize(age), 
+                           attacking = normalize(attacking), 
+                           movement = normalize(movement), 
+                           skill = normalize(skill), 
+                           defensive = normalize(defensive), 
+                           mentality = normalize(mentality), 
+                           goalkeeper = normalize(goalkeeper), 
+                           power = normalize(power))
+  
+  norm_for_clust <- data_normalized %>% select(-player_api_id, -position, -season, -id,
+                                      -height,         -weight, -goalkeeper)
+  rownames(norm_for_clust) <- data_normalized$id
+  
+  # k-means clustering
+  kcluster <- kmeans(norm_for_clust, cluster_k_values[i])
+  kcluster_output <- data.frame(id = names(kcluster$cluster), 
+  cluster = paste(positions_for_loop[i],kcluster$cluster, sep = ""), row.names = NULL)
+  
+  player_cluster <- rbind(player_cluster, kcluster_output)
+}
+```
 
-### Analysis
+Joining the cluster with the player attributes to profile the clusters
 
-```{r warning =FALSE}
-home_matches <- home_matches %>% 
-  mutate(player_Combo1 = paste(str_trim(home_player_1),sep = "-", 
-                               str_trim(home_player_X1)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo2 = paste(str_trim(home_player_2),sep = "-", 
-                               str_trim(home_player_X2)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo3 = paste(str_trim(home_player_3),sep = "-", 
-                               str_trim(home_player_X3)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo4 = paste(str_trim(home_player_4),sep = "-", 
-                               str_trim(home_player_X4)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo5 = paste(str_trim(home_player_5),sep = "-", 
-                               str_trim(home_player_X5)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo6 = paste(str_trim(home_player_6),sep = "-", 
-                               str_trim(home_player_X6)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo7 = paste(str_trim(home_player_7),sep = "-", 
-                               str_trim(home_player_X7)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo8 = paste(str_trim(home_player_8),sep = "-", 
-                               str_trim(home_player_X8)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo9 = paste(str_trim(home_player_9),sep = "-", 
-                               str_trim(home_player_X9)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo10 = paste(str_trim(home_player_10),sep = "-", 
-                                str_trim(home_player_X10)))
-home_matches <- home_matches %>% 
-  mutate(player_Combo11 = paste(str_trim(home_player_11),sep = "-", 
-                                str_trim(home_player_X11)))
-
-# Filter out the required columns
-txn <- home_matches %>% 
-  select(home_team_goal, away_team_goal, player_Combo1:player_Combo11)
-txn <- na.omit(txn)
-txn$result <- txn$home_team_goal-txn$away_team_goal
-# convert to win loss draw
-txn$result <- ifelse(txn$result == 0, "Draw", 
-                     ifelse(txn$result > 0, "Win", "Loss"))
-summary(txn)
-
-txn <- txn[,-c(1,2)]
-#read the table to csv
-
-# read back as transactions
-txn_final <- read.transactions("txn.csv", 
-                               format=c("basket"),sep=",", 
-                               rm.duplicates=TRUE)
-rules <- apriori(txn_final,appearance = list(rhs = c('Win','Loss')),
-                 parameter=list(supp = 0.015, 
-                                conf=0.5,minlen = 2, maxlen=8))
-#We are taking support to be less so as to capture the losses 
-# as loss percentage of Roma is low.
-
-#formatting the results and view the summary
-options(digits=2)
-summary(rules)
-
-# depending on the measure we care about, 
-# we can sort the rules before looking
-# at the top candidates. This command sorts the rules based on lift.
-# we then reinspect the top 5.
-rules <- sort(rules,by="lift",decreasing=TRUE)
+```{r}
+agg_player_cluster <- merge(player_attributes, player_cluster, by="id", all.y = TRUE) %>%
+  select(-player_api_id, -position, -season, -id, -height, -weight, -goalkeeper) 
+table(agg_player_cluster$cluster)
 ```
 
 ```{r}
-inspect(rules[1:20])
+# Plotting the distribution of metrics for each cluster to understand profiles
+plot_data <- tidyr::gather(agg_player_cluster,param,value,-cluster)
+ggplot(data = plot_data,aes(x=param,y=value,group=param,fill=param)) + geom_violin() +
+  facet_wrap(~cluster)
 ```
 
+Profiles  
 
-### Findings and insights for away matches:
-We can see that there are certain combination of players which implies a loss or win with a probability defined by the confidence. The High lift can be noticed as well which means a loss/win x times as compared to them playing at a random position. 
-
-### Recommendation for away matches:
-We can be cautious about who all should be rested and which players need to play at what positions so as to increase the chances of winning against other teams.
-
-
-## Solution 3: Select new players on key player attributes and training team to improve them
-
-### Why player attributes?
-
-We want to identify what non-obvious player attribute combinations have worked successfully for AS Roma. The Coach can use these patterns for training players on attributes that appear to be important. This can also be used towards selecting players which have these successful attribute combinations.
-
-### Our approach 
-
-We want to identify players who have played for Roma between 2008 and 2016 and measure their average attribute-level performance by taking the median score for every attribute.
-*Assumption* We are assuming here that the players' dominant attributes remain similar over the years.
-To capture how these player attributes translate to success, what should be the optimum success metric?
-
-We do not want to look at win-loss percentage as that does not capture the difference in goals scored by opponents. The main premise of a win is to score as many goals as possible and prevent as many goals of the opponent. To measure the performance of a player with particular attributes across matches, we can see how his team performed when he was paying. We use the goal difference for all the matches he played. If a player has played 10 matches between 2008-16, his average goal difference tells us how many goals were scored vs prevented for matches where this player was in our team.
-(https://talksport.com/football/389411/world-cup-groups-goal-difference-head-to-head-england-belgium/)
-This is similar to the plus/minus metric used in games like Basketball. (https://content.iospress.com/articles/journal-of-sports-analytics/jsa225)
-
-We could also take weighted mean goal difference with a win rate of opponents as weights to account for the difficulty of the match but we take simple mean goal difference to keep the model simple for now. That could be an extension of this work in the future.
-
-Player attributes work in combinations. There are primarily grouped into three categories - Mental, Attack, and Defense. There are several attributes under each and its impossible to train players on all. We use Association Rules to identify non-obvious combinations have worked for AS Roma in the past by increasing mean goal difference at player level and which can be used by the Coach to increase mean goal difference; eventually wins and higher chances of qualifying for further stages.
-
-### Analysis
-
-* There are over 700 missing items most of which are in betting related columns which we will not be using for player attribute analysis. We drop these columns.Of the remaining 9, 8 are for away team players which we will look at later. 1 is for home_team_player_5. We check the player that played most as home_player_5 in this Season 2015/16 and map it to the missing value after ensuring that this player wasn't amongst the other players.
-```{r warning =FALSE}
-sum(is.na(home_matches))
-home_matches <- select(home_matches, c(1:77))
-home_matches$home_player_5[home_matches$season == "2015/2016"]
-210111 %in% 
-  home_matches[(home_matches$season == 
-                  "2015/2016")&(home_matches$id ==13173 ),]
-
-home_matches$home_player_5[(home_matches$season == 
-                              "2015/2016")&(home_matches$id ==
-                                              13173 )] <- 210111
-
-roma_players_per_match <- select(home_matches, 
-                                 id, 
-                                 matches("home_player_[[:digit:]]")) %>%
-  collect() %>%
-  gather(player, player_api_id, -id) %>%
-  rename(match_id = id)
-
-```
-
-
-* DATA TRANSFORMATION:- We combine the player attributes and match table filtered for Roma matches and players, to get player attribute details and the corresponding mean goal difference. 
+  * Defenders:  
   
-  1. We filter data for home players, gather by players to convert to long format. This gives us 1661 observations (151*11).
+    + D1 - age >= 25, movement > 70 and skill > 67.5 - older players with good skill and movement
+    + D2 - age < 25 - Typically low on skill and mentality compared to other groups
+    + D3 - age >= 25, movement < 70 and skill < 67.5 - older players with lower movement and lesser skill
+
+  * Midfielders:
   
-  2. We then group player attributes using median for the 94 unique players that played for Roma in this period.
+    + M1 - age < 23 - Typically low on skill and mentality compared to other groups
+    + M2 - age > 23, defensive > 50 and power > 73 - older players who perform well in terms of their defensive attributes and have greater power attributes
+    + M3 - age > 23, defensive < 50 and power < 73 - older players who perform well in assisting the strikers. They have lower defending attributes, but assist strikers in terms of their attacking capabilities
+
+  * Defenders:  
   
-  3. We merge the data back on matchId to get player attributes and calculate the mean goal_difference. 
+    + S1 - attacking > 75, mentality > 65 - Strong and experienced strikers able to adapt to the game and perform well
+    + S2 - attacking < 75, mentality < 65 - Good strikers, but have a lower average age, indicating lower experience, but have potential on par with the experienced strikers
 
-
-```{r warning =FALSE}
-home_matches2 <- rename(home_matches,match_id= id)
-roma_player_match <- merge(roma_players_per_match,home_matches2,
-                           by.x = "match_id",by.y="match_id", all.x=TRUE)
-roma_player_match <- mutate(roma_player_match, 
-                            goal_diff = home_team_goal - away_team_goal)
-#1661 obs
-
-goal_player <- roma_player_match%>% 
-  group_by(player_api_id)%>%
-  summarise(goal_mean = round(mean(goal_diff),2))%>%
-  select(player_api_id, goal_mean)
-
-
-player_atts_tbl <- collect(player_atts_tbl)
-roma_players_all <-unique(roma_players_per_match$player_api_id)
-roma_players_all <- tbl_df(roma_players_all)
-colnames(roma_players_all) <- "player_api_id"
-roma_players_att <- tbl_df(player_atts_tbl[
-  (player_atts_tbl$player_api_id %in% 
-     roma_players_all$player_api_id),])
-
-
-
-roma_players_att2 <- roma_players_att %>%
-  select(c(-player_fifa_api_id,-id,-date,-preferred_foot,-attacking_work_rate,
-           -defensive_work_rate))%>%
-  group_by(player_api_id) %>%
-  summarise_all(funs(if(is.numeric(.)) median(., na.rm = TRUE) else max(.)))
-
-sum(is.na(roma_players_att2))
-
-roma_players_att2$player_api_id[is.na(roma_players_att2$sliding_tackle)]
-# Some attributes are missing for only two players. We use the median 
-# attribute value across players of Roma to fill this value. Assumption 
-# is that these players have median # performance on these attributes. 
-
-roma_players_att2$sliding_tackle[
-  is.na(roma_players_att2$sliding_tackle)] <- 
-  median((roma_players_att2$sliding_tackle),na.rm = TRUE)
-
-roma_players_att2$volleys[is.na(roma_players_att2$volleys)] <- 
-  median((roma_players_att2$volleys),na.rm = TRUE)
-
-roma_players_att2$curve[is.na(roma_players_att2$curve)] <- 
-  median((roma_players_att2$curve),na.rm = TRUE)
-
-roma_players_att2$agility[is.na(roma_players_att2$agility)] <- 
-  median((roma_players_att2$agility),na.rm = TRUE)
-
-roma_players_att2$balance[is.na(roma_players_att2$balance)] <- 
-  median((roma_players_att2$balance),na.rm = TRUE)
-
-roma_players_att2$jumping[is.na(roma_players_att2$jumping)] <- 
-  median((roma_players_att2$jumping),na.rm = TRUE)
-
-roma_players_att2$vision[is.na(roma_players_att2$vision)] <- 
-  median((roma_players_att2$vision),na.rm = TRUE)
-
-Roma_player_match_att <- merge(goal_player,roma_players_att2,
-                               by.x = "player_api_id", 
-                               by.y = "player_api_id", 
-                               all.x= TRUE)
-
-```
-
-* We then transform the data to transaction level data by discretizing the numerical variables which are all the selected attributes by breaking them into two categories. A player is high on an attribute if he is better than the median.
-
-```{r, warning =FALSE, message = FALSE}
-
-df <- as.data.frame(Roma_player_match_att)
-df2 <- select(df, -c(33:37))
-```
-```{r,warning = FALSE, message=FALSE}
-fn <- function(x)discretize(x,"frequency", 
-                            categories = 2, 
-                            label =c(0,1))
-df3 <- tbl_df(cbind(df2[1], sapply(df2[2:32],fn)))
-df3 <- select(df3, -player_api_id)
-
-```
-
-```{r,warning = FALSE, message=FALSE}
-#Converting the attributes to numerical values
-df4 <- sapply(df3, as.numeric)
-df5 <- df4[, 1:31]-1
-```
-
-* Converting to transactions Matrix
+# Appendix
 
 ```{r}
-txn_Matrix <- as(df5, "itemMatrix")
-
+summary(match)
+summary(player_atts)
 ```
-
-```{r warning =FALSE}
-txn_p_attr <- apriori(data = txn_Matrix,
-                      appearance = list(rhs = c('goal_mean') ),
-                      parameter = list(support= 0.1, 
-                                       confidence = 0.70, 
-                                       maxlen =4))
-
-#Inspect rules only where rhs is goal_mean
-
-txn_p_attr <- sort(txn_p_attr, 
-                   by = c("lift", "confidence"), 
-                   decreasing = TRUE)
-
-inspect(txn_p_attr[1:5])
-
-```
-
-
-### Findings and insights
-
-1. The Magic 3 as we could call it is the 3 player attributes combination that leads to better player performance and eventually higher chances of a win in home_matches for AS Roma. These are ball control, aggression, marking; a combination of attacking, mental and defensive abilities.
-[1]	{ball_control,aggression,marking}	=>	{goal_mean}	0.128	0.857	1.549	12
-This means players who have high ball control, aggression and marking have ~55% higher mean goal difference, 85.7% of the times they have been used. This means that more goals have been scored or/and more goals from opponents have been prevented when players with these attribute combinations were on the field. This translates directly into ~55% more chance of winning.
-The Coach has used them in only 12.8% of the matches.
-
-2. Crossing and short passing is a combination that has been used most (28.7% of the matches) but has resulted in 28.4% higher mean goal difference 71% of the times.
-On the other hand, Crossing along with ball control and agression are far more rewarding 81% of the times they have been used in ~14% of the matches.
-{crossing,ball_control,aggression}	=>	{goal_mean}	0.138	0.813	1.469	13
-
-
-3. An obvious pattern is ball control and a sliding tackle.
-Sliding tackle is a tricky defensive skill as it trades off balance and reduces the reaction time. This skill, when combined with good ball control has proven to be rewarding with 40% higher goal mean for matches ~78% of the times when this combination was used.  (https://www.myactivesg.com/sports/football/training-methods/football-for-beginners/when-to-use-a-slide-tackle-in-football).
-(https://www.guidetofm.com/players/attribute-combinations)
-[22]	{ball_control,sliding_tackle}	=>	{goal_mean}	0.149	0.778	1.406	14
-
-The non-obvious one is sliding tackle and ball control with long shots. This combination of attack and defense has resulted in a mean goal difference that is 42% higher than if this attribute combination was absent 78.6% of the times. The Coach has used this combination only 11.7% of the times.
-[21]	{ball_control,long_shots,sliding_tackle}	=>	{goal_mean}	0.117	0.786	1.420	11
-
-4. Marking does require the obvious vision and ball control but when the player is able to intercept a pass made by the opposite team, the goal difference can increase by 42% in ~79% of the cases.
-This combination has been used only 11.7% of the times,
-[18]	{ball_control,interceptions,marking}	=>	{goal_mean}	0.117	0.786	1.420	11
-
-
-### Recommendation:
-1. We recommend that the Coach continues to build on the Magic 3 player attributes. 
-2. Crossing and short passing has been used often but has not been rewarding. We suggest an alternative combination of Crossing, aggression (attack) and ball control (defense). This has not been tried as often but has proven to be very successful in the past.
-3. Long shots and sliding tackle can be used by midfielders to attack and also prevent the opposite team from coming too close to the goal.
-4. Players must be able to intercept the passes made towards the opponent player to whom they have been marked. This would reduce ball possession of the away team.
-These attribute combinations can be used by the Coach to train players and to select players that posses these combinations to increase goal difference and consequently win rate.
-
-
-
-There are several attributes that are important for the game but it is not possible to focus on all at the same time or customize all based on opponents. We try and identify the non-obvious combination of attributes that have worked for AS Roma in the past by increasing mean goal difference at the player level. We use association rules to explore this combination which could be used by the Coach of AS Roma to maintain and increase mean goal difference which would eventually lead to more wins and higher chances of qualifying for further stages.
-
-## Solution 4: Strengthen advantageous team attributes
-We have data regarding the attributes and tactics that different teams have used over the years. We what to see what combinations of tactics and general team features result in wins most often. 
-
-### Why team attributes matter? 
-
-Knowing what team attributes and tactics that have the strongest association with winning will allow you to format your team in a way that has the greatest chance for success
-First, we need to collect the two tables we will be using and clean it to the appropriate format.
-
-### Analysis
-```{r, warning = FALSE, message = FALSE}
-team_atts_tbl <- tbl(con, "team_attributes") %>% collect()
-
-# Attach the column names to the values so we can 
-# differentiate them easily when we find association rules
-
-team_atts_tbl$buildUpPlaySpeedClass <- 
-  paste(team_atts_tbl$buildUpPlaySpeedClass, 
-        "buildUpPlaySpeedClass", sep = '_')
-
-team_atts_tbl$buildUpPlayDribblingClass <- paste(
-  team_atts_tbl$buildUpPlayDribblingClass,
-  "buildUpPlayDribblingClass", sep = '_')
-
-team_atts_tbl$buildUpPlayPassingClass <- paste(
-  team_atts_tbl$buildUpPlayPassingClass, 
-  "buildUpPlayPassingClass", sep = '_')
-
-team_atts_tbl$buildUpPlayPositioningClass <- paste(
-  team_atts_tbl$buildUpPlayPositioningClass, 
-  "buildUpPlayPositioningClass", sep = '_')
-
-team_atts_tbl$chanceCreationPassingClass <- paste(
-  team_atts_tbl$chanceCreationPassingClass, 
-  "chanceCreationPassingClass", sep = '_')
-
-team_atts_tbl$chanceCreationCrossingClass <- paste(
-  team_atts_tbl$chanceCreationCrossingClass, 
-  "chanceCreationCrossingClass", sep = '_')
-
-team_atts_tbl$chanceCreationShootingClass <- paste(
-  team_atts_tbl$chanceCreationShootingClass, 
-  "chanceCreationShootingClass", sep = '_')
-
-team_atts_tbl$chanceCreationPositioningClass <- paste(
-  team_atts_tbl$chanceCreationPositioningClass, 
-  "chanceCreationPositioningClass", sep = '_')
-
-team_atts_tbl$defencePressureClass <- paste(
-  team_atts_tbl$defencePressureClass, 
-  "defencePressureClass", sep = '_')
-
-team_atts_tbl$defenceAggressionClass <- paste(
-  team_atts_tbl$defenceAggressionClass,
-  "defenceAggressionClass", sep = '_')
-
-team_atts_tbl$defenceTeamWidthClass <- paste(
-  team_atts_tbl$defenceTeamWidthClass, 
-  "defenceTeamWidthClass", sep = '_')
-team_atts_tbl$defenceDefenderLineClass <- paste(
-  team_atts_tbl$defenceDefenderLineClass,
-  "defenceDefenderLineClass", sep = '_')
-
-# Now we select only the columns we want to merge with the matches table
-team_atts_tbl <- team_atts_tbl %>%
-  select(team_fifa_api_id, team_api_id, date, 
-         buildUpPlaySpeedClass, 
-         buildUpPlayPassingClass, 
-         buildUpPlayDribblingClass, 
-         buildUpPlayPositioningClass, 
-         chanceCreationCrossingClass, 
-         chanceCreationPassingClass, 
-         chanceCreationShootingClass, 
-         chanceCreationPositioningClass, 
-         defencePressureClass, 
-         defenceAggressionClass, 
-         defenceTeamWidthClass, 
-         defenceDefenderLineClass)
-
-# Convert to date time for easier merge
-team_atts_tbl$date <- ymd_hms(team_atts_tbl$date)
-
-# Calculate the match results for all matches
-league_matches <- collect(match_tbl) %>% 
-  filter(league_id == 10257) %>%
-  select(home_team_goal, 
-         away_team_goal, 
-         away_team_api_id, 
-         home_team_api_id, 
-         date)
-
-league_matches$result <- league_matches$home_team_goal-
-  league_matches$away_team_goal
-
-# Convert result column to win, loss, draw
-league_matches$result <- ifelse(league_matches$result == 0,
-                                "Draw", ifelse(league_matches$result > 0,
-                                               "Win", "Loss"))
-
-# Convert to date time for easier merge
-league_matches$date <- ymd_hms(league_matches$date)
-
-# Merge the team attributes with the match table using home 
-# team id and date to keep things consistent
-team_atts_tbl <- dplyr::rename(team_atts_tbl, 
-                               home_team_api_id = team_api_id)
-team_atts_tbl$date <- year(team_atts_tbl$date)
-league_matches$date <- year(league_matches$date)
-new_table <- merge(league_matches, team_atts_tbl, 
-                   by = c("home_team_api_id","date"), 
-                   all.x=FALSE, all.y=FALSE)
-
-# Create a new table with only the factors we need
-item_data_frame <- new_table %>%
-  select(-home_team_api_id, -date, 
-         -home_team_goal, 
-         -away_team_goal, 
-         -away_team_api_id, 
-         -team_fifa_api_id)
-```
-We now have a table that has both team attributes and results of the match. We can then proceed to use this table to analyze what combinations of team attributes result in wins most often. 
-
-```{r warning =FALSE, message=FALSE, echo=FALSE}
-write.csv(item_data_frame, "team_atts_and_results.csv")
-team_atts <- read.transactions("team_atts_and_results.csv",format=c("basket"),sep=",")
-
-rules <- apriori(team_atts,
-                 parameter=list(supp = 0.05, conf=0.3, minlen = 5, maxlen = 10), 
-                 appearance = list(rhs=c("Win")))
-options(digits=2)
-summary(rules)
-rules <- sort(rules,by="confidence",decreasing=TRUE)
-
-```
-```{r, warning = FALSE, message = FALSE}
-inspect(rules[1:10])
-```
-
-### Findings and Insights
-We see that a value of "lots" in the chance creation column is associated with wins in the top 10 rules sorted by confidence. This means that teams with the highest average amount of shots frequently win. This may seem obvious that teams that shoot more win more, but the data suggests that teams should focus on shooting frequently over looking for the perfect scoring opportunity. Another finding is, teams employing a "balanced" approach to attacking often results in wins, as it appears in many of the top 10 rules. 
-
-Now that we know what team attributes are most successful I want to check Roma's attributes to see which attributes most closely match what you are currently utilizing.
-```{r}
-glimpse(filter(team_atts_tbl, home_team_api_id == 8686, date == '2015'))
-```
-
-### Recommendations
-Roma currently is in the "normal" category for chance creation shooting. We recommend you formulate your offense in a way in which getting shots off is prioritized. We also noticed that teams that took a balanced approach to attacking showed up in our top rules frequently, suggesting that this approach contributes to winning. Roma currently builds attacks quickly. We recommended taking a more balanced approach to this and slowing down the pace. In addition, slowing down the pace of attacks will help balance out the change we recommended to increase shots and will ease the transition to these new tactics. 
-
-
-# Warnings or Potential Drawbacks of our analysis
-1. We assume that player performance on attributes have not changed much over the last 8 years and a median would be a good indicator of how he fared on these attributes between 2008-16.
-2. We treat all opponents equally in our analysis. One risk is that a goal difference of 2 means more when achieved against a tough opponent (like FC Barcelona) as against an easy opponent.
