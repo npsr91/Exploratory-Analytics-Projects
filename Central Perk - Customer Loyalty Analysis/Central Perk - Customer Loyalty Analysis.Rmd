@@ -1,728 +1,639 @@
 ---
-title: "HW4 6410 - Central Perk - Group 7"
-author: "Coltt Thunstrom, Chandrakanth Tolupunoori, Erik Tonsfeldt, Raghuveer Rao Vijjini, Tanmayee Waghmare"
-date: "November 2, 2018"
-output:
+title: "HW 3"
+author: Sarath Haridas, Abhinav Kumar, Tarun Newton, Pranav Pura Lingaraju, Kavya Puthuvaya, Pranav Srinivas Nagavelli
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
   pdf_document:
-    latex_engine: xelatex
     toc: yes
-    toc_depth: '3'
-  word_document:
-    toc: yes
-    toc_depth: '3'
-  html_document:
-    toc: yes
-    toc_depth: 3
 urlcolor: blue
 ---
 
-# Introduction  
+
+# Business Problem
+
+Michael Warnken (Senior Director of e-Commerce & General Manager) and Roselie Vaughn (Director of Customer Digital Experience) of Sun Country Airlines plan to develop more robust, data-driven customer insights in order to better structure their marketing efforts for the customers. To do so, they would like to better understand their customers. 
 
 
-## Central Perk's Situation 
+## Why Clustering?
 
-Central Perk is a boutique coffee shop in New York City. The owners assert that they have a loyal customer base, however, they have asked our team to test their assumption and analyze historical sales data in order to uncover true demand patterns. The owners hope to understand their customer behavior better so that they can develop incentives and pricing adjustments to both normalize demand while simultaneously generating additional revenue.
-  
-## The Business Problem and Approach
+We believe that by identifying segments of customers, the marketing efforts can be targeted to customer segments instead of tailoring the effort to individual customers. The segements could be identified in a way that ensures that the customers within the segment exhibit similar behaviour and customers across segments behave differently. 
 
-Our overall objective was to 'smooth demand' i.e. spread it more across the entire timeframe. We looked at demand trends and observed three cyclical patterns: monthly, weekly, and hourly. As a result, our recommendations target each one of these patterns and aim to lift the low-demand times, days, and months through offering new products, bundled products, discount coupons, and happy hours. By addressing each issue, Central Perk owners can generate greater demand during traditionally low-demand periods and realize higher profits for their investors.
-
-Understanding this basic need we structured our analysis as follows:  
-
-1. Data cleaning
-+  Central Perk's data contained some anomalies, from which we tried to impute and clean where possible.
-+  We created new columns which can be used for granular analysis.
-2. Exploratory Analysis
-+  Defined Loyal customers and compared them with the others at various levels.
-+  Looked for demand patterns across months, days, hours and so on.
-+  Came up with suggestions to smooth demand.
-3. Clustering
-+  We clustered using K-modes on select variables which could provide unique clusters.
-+  Tried to visualize the clusters to identify distinct features. 
-4. Association Rules
-+  Explored association rules to find possibilities to bundle products.
-
-# Data Cleaning and Reshaping
-
-#### Set working directory
-```{r setup, include=F}
-# Save your root directory below:
-# Change 'setwd' to your initials when you're working
-RR <- ''
-Coltt <- ''
-CT <- 'D:/Fall Term/MSBA 6410 - EDA- Viz/Homeworks/HW 4'
-ET <- ''
-TW <- ''
-# Change 'path' to your initials when you're working to access data files
-RR_path <- ''
-Coltt_path <- ''
-CT_path <- 'D:/Fall Term/MSBA 6410 - EDA- Viz/Homeworks/HW 4/Central Perk'
-ET_path <- ''
-TW_path <- ''
-path = CT_path
-
-knitr::opts_knit$set(root.dir = CT)
-knitr::opts_chunk$set(comment = NA)
-rm(RR, Coltt, CT, ET, TW)
-```
+Given that there are no existing segments available, we use an unsupervised clustering alogrithm to identify the segments. 
 
 
-#### Load Necessary Packages
-```{r message=FALSE}
-library(rmarkdown)
-library(plyr)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(gridExtra)
+# Data Cleaning
+
+We import the data and explore the same to understand its structure, and clean the data to make it ready for analyses. 
+
+
+## Data Import 
+
+Loading libraries
+
+```{r global_options, warning = FALSE, message = FALSE}
 library(data.table)
-library(stringr)
 library(lubridate)
-library(clustMixType)
+library(dplyr)
+library(stringr)
 library(cluster)
-library(arules)
-library(Rtsne)
-library(klaR)
-library(scales)
-library(ggpubr)
-library(png)
-library(grid)
+library(ggplot2)
+library(ggfortify)
+library(stats)
+library(factoextra)
+library(naniar)
 ```
 
+Importing data and removing rows that are completely duplicated. 
 
-```{r include=F}
-col1 <- "#F5F1E0"
-col2 <- "#A8122A"
-col3 <- "#00351B"
+_Assumption_
 
-myTheme <- theme_classic() + theme(axis.text = element_text(size = 10),
-                          axis.title = element_text(size = 12),
-                          title=element_text(size=14), 
-                          plot.title = element_text(hjust = 0.5),
-                          plot.subtitle = element_text(hjust = 0.5))
+Since the data is at a trip-passenger level, duplicate records are data entry issues
+
+```{r eval = TRUE, echo = TRUE}
+# Data import
+sun <- fread('SunCountry.csv', header = TRUE, stringsAsFactors = FALSE)
+
+str(sun)
+
+# Removing row level duplicates
+sun_undup <- sun[!duplicated(sun), ]
 ```
 
-#### Initialize Normalization Function for Distance Calculations  
+Analyzing the structure of the data
+
 ```{r}
-#Creating a normalizing function
+summary(sun_undup)
+dim(sun_undup)
+```
+
+We have data for 3.3 million observations and 26 columns that captures travel information for each passenger for each trip. There are some irregularities that are clearly identifiable from certain columns
+
+_Findings_
+
+* Age and birthdate: We observe that the age has values that are missing. And, there are observations with negative age, which might have arised from a data entry issue at the birthdate column. We also have observations for age that are over 100 years old. 
+* GenderCode: We observe null values, and there are records where the gender is marked as U (Unknown)
+* UflyRewardsNumber and CardHolder: We observe that there are multiple NAs for these two. This could either be because the customer did not have an SC credit card or that he didn't use this SC Credit card for the specific transaction. For the purpose of this analysis, we assume that the customer did not have an SC credit card. 
+* MarketingAirlineCode: There are airline codes capturing for other airlines as well. SY refers to Sun Country, and our analysis is going to focus only for Sun Country airlines
+* BaseFareAmount and TotalDocAmount: We observe that there are records where the BaseFareAmount and the TotalFare amount are over USD 10,000. The maximum [ticket price](https://www.suncountry.com/booking/search.html) that Sun Country flies for Domestic in 2018 is USD 800. Therefore, we have to treat these extreme values before using them in any analysis 
+
+We subset the data for only Sun Country flights by filtering for records having the MarketingAirlineCode as SY. Because we are primarily interested in identifying customer patterns for Sun Country airlines only. 
+
+```{r}
+sun_undup <- sun_undup %>% filter(MarketingAirlineCode == 'SY')
+```
+
+
+## Missing Value Treatment
+
+Firstly, we try to identify the sparsity of the missing values for the columns. 
+
+```{r}
+gg_miss_upset(sun_undup, nsets = 4)
+```
+
+_Description_
+
+The graph above captures the number of missing records in the data, and also captures the interaction between the missing values. The linkages at the bottom capture which variables are missing in common for the corresponding bar. For example, the first bar has around 258K missing values for both the UFlyRewardsNumber and the CardHolder variables. 
+
+_Interpretation_
+
+We observe that the missing values are present for 4 columns only. Out of which, the missing values for UflyRewardsNumber and CardHolder are present across the same set of records, and the missing values for Age and BirthDateId are present across the same set of records. 
+
+
+### Treating for UFlyRewardsNumber and CardHolder
+
+The missing values for the UFlyRewardsNumber and CardHolder are present across the same set of records. Hence, the missing values can be replaced with dummy values for both the columns. 
+
+For the UFlyRewardsNumber, we can replace the missing values with 0 and CardHolder with "NA". 
+
+```{r}
+sun_undup$UFlyRewardsNumber <- ifelse(is.na(sun_undup$UFlyRewardsNumber), 0, 
+                                      sun_undup$UFlyRewardsNumber)
+sun_undup$CardHolder <- ifelse(is.na(sun_undup$CardHolder), "NA", 
+                               sun_undup$CardHolder)
+```
+
+
+### Treating for Age and BirthDate
+
+Before treating for the missing value of age, we must analyze whether the variables are missing at random or if there exists a pattern that would help us impute the missing values. 
+
+```{r}
+# Comparing missingness of age with other variables
+# Service Start Date
+table("Age Missing" = is.na(sun_undup$Age), 
+      "Service Start Month" = lubridate::month(sun_undup$ServiceStartDate))
+
+# PNR Create Date
+table("Age Missing" = is.na(sun_undup$Age), 
+      "PNR Create Month" = lubridate::month(sun_undup$PNRCreateDate))
+
+# Gender Code
+table("Age Missing" = is.na(sun_undup$Age), 
+      "Gender Code" = sun_undup$GenderCode)
+
+# Booking Channel
+table("Age Missing" = is.na(sun_undup$Age), 
+      "Booking Channel" = sun_undup$BookingChannel)
+```
+
+_Interpretation_
+
+Similarly, comparing across all the other variables we are unable to observe any pattern with respect to any variable. Therefore, we infer that the values for age are missing at random, and can be removed. Also, there are only 38 records for which the Gender is Unknown ("U"). Therefore, these records with unknown Gender code can also be removed.
+
+```{r}
+sun_undup_age_rm <- sun_undup %>% filter(!is.na(Age) & GenderCode != 'U')
+```
+
+_Conclusion_
+
+* The missing values for the UFlyRewardsNumber and CardHolder have been replaced with dummy values. 
+* The missing values for the Age column were removed as they were identified to be missing at random
+
+
+## Outlier Treatment
+
+We had identified outliers in the Age, TotalDocAmount and the BaseFareAmount. 
+
+
+### Treating for Age
+
+For age, there are only 4 records where the age is negative. Also, there are only a few records where age is > 100. There cannot be any person who has a negative age. Also, there are hardly people over the age of 100 who travel. Hence, these have to be data entry errors. These also have to be treated akin to the missing age approach. Also, since there are only a few records, we remove these records where age is beyond these limits instead of replacing them with median. 
+_Assumption_
+
+The data for which ages are out of the threshold are also missing at random, and therefore, removing them would not impact any inferences drawn from the data. 
+
+```{r}
+sun_undup_age_rm <- sun_undup %>% 
+  filter(Age > 0 & Age <= 100) 
+```
+
+_Description_ 
+
+
+### Treating for amounts
+
+We identify the univariates for the variables TotalDocAmount and the BaseFareAmount. As mentioned above, the current highest ticket price in the Sun Country website is around USD 800. Therefore, we can cap the prices at the 99.9^th^ percentile for those records with higher prices. 
+
+The 99.9^th^ percentiles for these 2 variables are USD 1,364 and USD 1,258. 
+
+```{r}
+quantile(sun_undup_age_rm$BaseFareAmt, probs = c(0, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 
+                                        0.9, 0.95, 0.99, 0.995, 0.999, 1))
+# 1258
+quantile(sun_undup_age_rm$TotalDocAmt, probs = c(0, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 
+                                        0.9, 0.95, 0.99, 0.995, 0.999, 1))
+# 1364
+
+sun_fin <- sun_undup_age_rm %>% 
+  mutate(BaseFareAmt = ifelse(BaseFareAmt > 1258, 1258, BaseFareAmt), 
+         TotalDocAmt = ifelse(TotalDocAmt > 1364, 1364, TotalDocAmt))
+```
+
+_Description_
+
+We also want to make sure we capture those customers who have had their first leg of journey from Sun Country. 
+
+_Assumption_
+
+It is possible that certain customers flew another airline and used Sun Country as a connector. We next filter our data to include only those PNR IDs for which Sun Country was the first flight. We identify the leg of journey using the Coupon Sequence Number and filter out PNR IDs which don't start with coupon sequence number of 1. 
+
+```{r}
+pnr <- sun_fin %>% 
+  group_by(PNRLocatorID) %>% 
+  summarise(min_cpn = min(CouponSeqNbr)) %>% 
+  filter(min_cpn == 1)
+```
+
+_Conclusion_
+
+* The values for BaseFareAmount and TotalDocAmount were capped at their respective 99.9^th^ percentile values
+* Records where Age was negative or over 100 were assumed as data entry errors and treated as missing at Random and removed as per the Missing Value Treatment approach
+
+
+# Identifying Unique Customer
+
+To identify customers, we need a unique key to identify customers. We could use the UFlyRewardsNumber to identify unique members. But we have no unique identifier for a non-member. Therefore, we have to identify a unique member identifier across all customers. 
+
+While there was no single column or combination of columns that was able to identify a unique member for the whole dataset, we observed that the combination of EncryptedName, BirthDateId and GenderCode was mostly unique. Hence, we assume that the unique identifier for a member is this combination. 
+
+We create a new column pkey which is a concatenation of the values in these columns. We use the pkey for the analysis going forward. 
+
+```{r}
+sun_fin_out <- sun_fin %>% 
+  filter(PNRLocatorID %in% pnr$PNRLocatorID) %>% 
+  mutate(pkey = paste(EncryptedName, birthdateid, GenderCode, sep = "-"))
+```
+
+
+# Data Exploration
+
+We explore the data to understand common patterns or trends that would help us in identifying customer groups. 
+
+
+## Age distribution
+
+```{r}
+ggplot(data = sun_fin_out) +
+  aes(x = Age) +
+  geom_histogram(bins = 19, fill = "#2171b5") +
+  labs(title = "Trip Distribution according to Age",
+       x = "Age",
+       y = "No of Trips") +
+  theme_minimal()
+```
+
+
+## Trip count for top 10 destinations
+
+```{r}
+sun_end_city <- sun_fin_out %>% 
+  group_by(ServiceEndCity) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count)) %>% head(11)
+
+sub <- sun_end_city$ServiceEndCity[c(2:11)]
+
+sun_end_city_top <- sun_fin_out  %>% 
+  filter(ServiceEndCity %in% sub) 
+
+ggplot(data = sun_end_city_top) +
+  aes(x = ServiceEndCity) +
+  geom_bar(fill = "#08519c") +
+  labs(title = "Top 10 Destinations According to No of Trips",
+       x = "Destination City",
+       y = "No of Trips") +
+  theme_minimal()
+```
+
+
+## Trip distribution according to month
+
+
+```{r}
+sun_fin_out_qtr <-sun_fin_out
+sun_fin_out_qtr$qtr <- lubridate::quarter(sun_fin_out_qtr$ServiceStartDate)
+sun_fin_out_qtr <- sun_fin_out_qtr %>% 
+  filter(ServiceStartCity %in% "MSP")
+
+date_dataset <- sun_fin_out_qtr %>% 
+  group_by(month=lubridate::month(ServiceStartDate)) %>% 
+  summarise(count = n())
+date_dataset$month_abb <- month.abb[date_dataset$month]
+date_dataset$month_abb_fac = factor(date_dataset$month_abb, levels = month.abb)
+
+ggplot(data = date_dataset) +
+  aes(x = month_abb_fac, weight = `count`) +
+  geom_bar(fill = "#6a51a3") +
+  labs(title = "Trip Distribution According to Month",
+       x = "Month",
+       y = "No of Trip") +
+  theme_minimal()
+```
+
+
+# Data Transformation
+
+To identify groups of similar customers, we need to create customer level clusters. To do so, we identify attributes that pertain to every individual customer. We aggregate from the trip level data to a customer level to arrive at our final dataset. 
+
+
+## Analytical Dataset Structure
+
+The table below details the list of columns that are captured in the analtyical dataset. 
+
+Column Name           | Description                             | Comments
+--------------------- | -------------------------------------   | ---------------------
+pkey                  | Primary Key for the customer            |
+GenderCode            | Gender                                  | 1 for Male
+age                   | Age                                     |
+amount                | TotalDocAmount Paid by the customer     |
+bkng_chnl_out         | Booking Channel - Outside Booking       |
+bkng_chnl_reserv      | Booking Channel - Reservation Booking   |
+bkng_chnl_syvac       | Booking Channel - SY Vacation Booking   |
+bkng_chnl_tour        | Booking Channel - Tour Operator         |
+bkng_chnl_web         | Booking Channel - SY Website Booking    |
+booked_coach_travel   | Booked Class - Coach                    |
+booked_fc_travel      | Booked Class - First Class              |
+card_holder           | SY Card Holder                          |
+city_per_trip         | Number of cities visited                |
+no_booking            | Number of tickets booked                | Distinct PNR Count
+travel_coach_travel   | Travelled Class - Coach                 |
+travel_fc_travel      | Travelled Class - First Class           |
+avg_min_dbd           | Min Days Before Departure Tickets Booked|
+avg_max_dbd           | Max Days Before Departure Tickets Booked|
+avg_len_stay          | Avg Length of Stay if Round Trip        |
+min_len_stay          | Min Length of Stay if Round Trip        |
+max_len_stay          | Max Length of Stay if Round Trip        |
+
+
+
+## Creating the Analytical Dataset 
+
+_Description_
+
+Since the amount of data involved is huge, instead of aggregating the data at once, we aggregate individual columns and later merge them together. In this process, we remove the redundant data frames as well to conserve space. At the end of this approach, all the intermediate tables are removed, and only the required tables remain, which include the raw data and the customer level analytical dataset. 
+
+Post the join, we convert the GenderCode column to a numeric by replacing the Male with 1 and Female with 0. This is to ensure that we are able to run our algorithms like k-Means or Hierarchical clustering. 
+
+_Assumption_
+
+* The customer behaviour is the same across the 2 years under consideration
+* The customer behaviour will remain stable for the foreseeable future and the results of the analysis can be generalized for the current calendar year as well
+
+```{r}
+rm(sun)
+rm(sun_undup)
+rm(sun_undup_age_rm)
+rm(pnr)
+rm(sun_fin)
+rm(date_dataset)
+rm(sun_end_city)
+rm(sun_end_city_top)
+rm(sun_fin_out_qtr)
+rm(sub)
+```
+
+```{r eval = FALSE}
+# Getting Age
+cust_raw_age <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(age = max(Age))
+
+# Getting Number of Bookings
+cust_raw_no_booking <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(no_booking = n_distinct(PNRLocatorID))
+
+# Getting Number of Bookings with Coach
+cust_raw_booking_coach_travel <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(booked_coach_travel = sum(BkdClassOfService == 'Coach'))
+
+# Getting Number of Bookings with First Class
+cust_raw_booking_fc_travel <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(booked_fc_travel = sum(BkdClassOfService == 'First Class'))
+
+# Getting Number of Travels in Coach
+cust_raw_travel_coach_travel <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(travel_coach_travel = sum(BkdClassOfService == 'Coach'))
+
+# Getting Number of Travels in First Class
+cust_raw_travel_fc_travel <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(travel_fc_travel = sum(BkdClassOfService == 'First Class'))
+
+# Getting TotalDocAmount Paid by the Traveller
+cust_raw_amount <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(amount = sum(TotalDocAmt))
+
+# Getting the Number of Cities the Visited
+cust_raw_city <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(city_per_trip = n_distinct(ServiceEndCity))
+
+# Getting the Number of Instances of Outside Booking
+cust_raw_bkng_chnl_out <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(bkng_chnl_out = sum(BookingChannel == 'Outside Booking'))
+
+# Getting the Number of Instances of Reservations Booking
+cust_raw_bkng_chnl_reserv <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(bkng_chnl_reserv = sum(BookingChannel == 'Reservations Booking'))
+
+# Getting the Number of Instances of Tour Operator Booking
+cust_raw_bkng_chnl_tour <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(bkng_chnl_tour = sum(BookingChannel == 'Tour Operator Portal'))
+
+# Getting the Number of Instances of SY Vacation Booking
+cust_raw_bkng_chnl_syvac <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(bkng_chnl_syvac = sum(BookingChannel == 'SY Vacation'))
+
+# Getting the Number of Instances of SCA Website Booking
+cust_raw_bkng_chnl_web <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(bkng_chnl_web = sum(BookingChannel == 'SCA Website Booking'))
+
+# Identifying whether the Customer is a Card Holder
+cust_raw_card_holder <- sun_fin_out %>% group_by(pkey, GenderCode) %>%
+  summarise(card_holder = sum(!is.na(CardHolder)))
+
+# Identifying the Days Before Departure and Length of Stay Metrics
+cust_raw_datediff <- sun_fin_out %>% group_by(pkey, GenderCode, PNRLocatorID) %>%
+  summarise(min_dbd = min(date_diff), max_dbd = max(date_diff)) %>% 
+  mutate(len_stay = max_dbd - min_dbd) %>% 
+  group_by(pkey, GenderCode) %>% 
+  summarize(avg_min_dbd = mean(min_dbd), avg_max_dbd = mean(max_dbd), 
+            avg_len_stay = mean(len_stay), min_len_stay = min(len_stay), 
+            max_len_stay = max(len_stay))
+
+# Merging Individual Datasets and Dropping Redundnat datasets
+cust_raw_1 <- merge(cust_raw_age, cust_raw_amount)
+
+rm(cust_raw_age)
+rm(cust_raw_amount)
+
+cust_raw_2 <- merge(cust_raw_1, cust_raw_bkng_chnl_out)
+
+rm(cust_raw_1)
+rm(cust_raw_bkng_chnl_out)
+
+cust_raw_3 <- merge(cust_raw_2, cust_raw_bkng_chnl_reserv)
+
+rm(cust_raw_2)
+rm(cust_raw_bkng_chnl_reserv)
+
+cust_raw_4 <- merge(cust_raw_3, cust_raw_bkng_chnl_syvac)
+
+rm(cust_raw_3)
+rm(cust_raw_bkng_chnl_syvac)
+
+cust_raw_5 <- merge(cust_raw_4, cust_raw_bkng_chnl_tour)
+
+rm(cust_raw_4)
+rm(cust_raw_bkng_chnl_tour)
+
+cust_raw_6 <- merge(cust_raw_5, cust_raw_bkng_chnl_web)
+
+rm(cust_raw_5)
+rm(cust_raw_bkng_chnl_web)
+
+cust_raw_7 <- merge(cust_raw_6, cust_raw_booking_coach_travel)
+
+rm(cust_raw_6)
+rm(cust_raw_booking_coach_travel)
+
+cust_raw_8 <- merge(cust_raw_7, cust_raw_booking_fc_travel)
+
+rm(cust_raw_7)
+rm(cust_raw_booking_fc_travel)
+
+cust_raw_9 <- merge(cust_raw_8, cust_raw_card_holder)
+
+rm(cust_raw_8)
+rm(cust_raw_card_holder)
+
+cust_raw_10 <- merge(cust_raw_9, cust_raw_city)
+
+rm(cust_raw_9)
+rm(cust_raw_city)
+
+cust_raw_11 <- merge(cust_raw_10, cust_raw_no_booking)
+
+rm(cust_raw_10)
+rm(cust_raw_no_booking)
+
+cust_raw_12 <- merge(cust_raw_11, cust_raw_travel_coach_travel)
+
+rm(cust_raw_11)
+rm(cust_raw_travel_coach_travel)
+
+cust_raw_13 <- merge(cust_raw_12, cust_raw_travel_fc_travel)
+
+rm(cust_raw_12)
+rm(cust_raw_travel_fc_travel)
+
+cust_raw_fin_1 <- merge(cust_raw_13, cust_raw_datediff)
+
+rm(cust_raw_13)
+rm(cust_raw_datediff)
+
+# One-Hot Encoding of GenderCode variable
+cust_raw_fin_1$GenderCode <- ifelse(cust_raw_fin_1$GenderCode == 'M', 1, 0)
+```
+
+```{r echo=FALSE}
+cust_raw_fin_1 <- read.csv('cust_raw_fin_20181018.csv')
+```
+
+This is the anlaytical datataset that will be used for the clustering algorithm. The summary of it is below. 
+
+```{r echo = TRUE}
+# Top records for the Analytical Dataset
+head(cust_raw_fin_1[, c(2:21)])
+```
+
+
+# Identifying Customer Segments
+
+Post the creation of the analytical dataset, we have to segment the users into multiple groups. However, there are multiple approaches that can be leveraged to form clusters. There can be Hierarchical or Partitioning methods that can be used to create clusters. 
+
+*Hierarchical methods*
+
+Hierarchical clustering algorithms actually belong to 2 categories: 
+* Bottom-up 
+* Top-down 
+
+Bottom-up algorithms treat each data point as a single cluster at the beginning and then successively merge pairs of clusters until all clusters have been merged into a single cluster that contains all data points. Bottom-up hierarchical clustering is therefore called Agglomerative Clustering. This hierarchy is represented as a tree or dendrogram. 
+
+Top-down algorithms flow in the opposite direction of the bottom-up algorithm. They start with all the data points and successively split the cluster into pairs until the end nodes are all the individual points. 
+
+_conclusion_
+Since each customer is unique and there exists no sub-segment level(s), we can assume that there exists no inherent hierarchical order in our data. Therefore, we can infer that the hierarchical methods are not suitable for cluster identification. We also substantiated this by performing hierarchical clustering and not observing satisfactory results. 
+
+*Partitioning methods*
+Partitioning clustering is used to classify observations into multiple groups based on their similarity. The paritioning algorithm works by iteratively re-allocating observations between clusters until a stable partition is reached. However, the number of clusters need to be specified by the user. Similarity is calculated based on distance calculations. 
+
+We go ahead with the partitioning clustering method, with k-means as the first algorithm. 
+
+## Rescaling data
+
+_Description_
+
+To apply distance based clustering, the first step is to rescale the numeric data columns ie., all numeric columns should have the same range of values. This process called normalization, will help us in handling columns that have varying scales. By normalizing, we rescale the data to a standardized scale, making the distance measures comparable. 
+
+There can be two ways in which the data can be rescaled: 
+* Min-Max Normalization -- The data is rescaled to a 0-1 scale
+* Standardization -- The data is assumed to be normal and scaled to have a mean of 0 and a standard deviation of 1
+
+The normalization method we chose is min-max normalization.
+
+
+### Min_Max Normalization
+
+In this normalization approach we bring all numeric columns to the range of 0 and 1 with 0 being the lowest value in the column and 1 being the highest value in the column. All other values are normalized based on the following formula:
+
+        __ Yi = [Xi - min(X)]/[max(X) - min(X)] __
+
+```{r}
 normalize <- function(x){
   return ((x - min(x))/(max(x) - min(x)))}
+
+idx <- sapply(cust_raw_fin_1, class) == "numeric" 
+
+cust_raw_fin_1[,idx] <- sapply(cust_raw_fin_1[,idx], normalize)
 ```
 
-#### Loading the Data
-```{r warning=FALSE}
-# Merging datafiles of the years 2016, 2017, 2018 
-filenames <- list.files(path = path, pattern = "*", full.names=TRUE)
-central <- ldply(filenames, read.csv)
-glimpse(central)
-```
+Post normalization, we have to choose a clustering method and evaluate its performance. There are various partitioning clustering methods available, and we start with the k-means algorithm. 
 
-## Specific Cleaning Steps and Rational  
-1. We cleaned the Sales columns by removing special characters and converted them to numeric values.
- + This will help us while aggregrating the data to hourly, daily and monthly levels to observe trends.
-2. We only retained the rows which had positive Net Sales in order to focus our analysis on Sales and not on Returns/ Refunds.
- + We assume that Central Perk will find more value in this level of analysis.
- + This will also clean the Quantity column which gets rid of negative values related to refunds.
-3. We remove rows that contain NULL in Price.Point.Name column, we found that these rows were correlated with Category errors, which was 'None', so it made sense to drop them completely.
- + We assume that the Category is not, NMAR (not missing at random).
- + We assume that both 'Regular' and 'Regular Price' are same and hence replace 'Regular Price' with 'Regular'. 
-4. We updated the 'NA' values in Customer.ID column to 'NoInfo' and also generated a binary column with 'yes/no' based on the information related to customer.
- + We assume that only the customers paying with a card have an encrypted Customer.ID and others are 'NA'
- + We assume that this will be helpful while exploring purchase patterns for Customers and also while performing clustering analysis.
-5. We then cleaned the 'Item' column to remove redundant information and renamed 'Price.Point.Name' column to `Size/Type` which makes more sense.
-6. We then created 'TimeStamp' column from Date and Time columns.
- + This will help us with our TimeSeries analysis for observing demand patterns.
-7. Finally we removed redundant data columns and also check for duplicate records and remove them.
- + Tax does not appear until November 7th, 2017, so we decided to not look at the column.
- + We found close to 4k duplicate records, we assume that these observations were genarated from data entry erros and should not be included in the analysis.
+**k-means Assumptions and Limitations**
+* Can create clusters with a specific shape only -- Since we have no idea of how the actual clusters will look like, we can assume that the clusters we obtain out of the algorithm are spherical in shape as we use the Euclidian distance measure
+* Can work with numerical data only -- Our dataset has only numerical clusters, and hence, there is no problem
+* The number of clusters (k) needs to be specified before clustering -- We will evaluate the clustering performance and choose the clusters based on the results
+* Highly sensitive to outliers -- Our data has been treated for outliers. Therefore, there would be no impact of outliers
+* Cannot capture hierarchical structure -- Since, we have not observed any significant results out of hierarchical clustering, we can infer that there is no hierarchical structure
+* Hard Clustering -- The customers are clustered into one group and one group only. It may be possible that a customer might belong to two different groups when his travel habits differ. But, given our original assumption that the behaviour is stable for the period under consideration, we can neglect this for the scope of this analysis. This assumption could be re-evaluated and restested in the next phase of the segmentation
+* Convergence to local minima - k-means could converge to local minima instead of the global minima. The convergence should be evaluated by running multiple instances to identify whether similar results are being obtained across runs
 
-#### Looking for errors in the data
-```{r, message = FALSE, warning=FALSE}
-#Identifying the columns with NA values
-colnames(central)[colSums(is.na(central)) > 0]
-
-table(central$Qty)
-unique(central$Item)
-unique(central$Price.Point.Name)
-head(central$Gross.Sales)
-```
-
-#### Data Cleaning and Transformation
-```{r, message = FALSE, warning=FALSE}
-clean <- central %>%
-  dplyr::rename(`Size/Type` = Price.Point.Name) %>%
-  filter(!(Event.Type == "Refund")) %>%
-  filter(!is.na(Qty)) %>%
-  filter(!(Date == 'Unknown Error')) %>%
-  mutate(Item = as.character(Item)) %>%
-  filter(Item != 'Custom Amount' & Category != 'None') %>%
-  mutate(Item = str_trim(str_replace(Item, "SM$", ""))) %>%
-  mutate(Item = str_trim(str_replace(Item, "LG$", ""))) %>%
-  mutate(Item = str_replace(Item, "ðY\u008d<LemonadeðY\u008d<", "Lemonade")) %>%
-  mutate(Gross.Sales = as.numeric(substring(Gross.Sales, 2)),
-         Net.Sales = as.numeric(substring(Net.Sales, 2)),
-         Profit = round(.2 * Gross.Sales, 2)) %>%
-  mutate(Timestamp = as.POSIXct(paste(Date, Time), format="%m/%d/%y %H:%M:%S"),
-         Hour = factor(hour(Timestamp)),
-         Month = factor(month(Timestamp)),
-         Weekday = factor(weekdays(Timestamp))) %>%
-  mutate(Season = as.factor(ifelse(Month %in% c(12, 1, 2), 'Winter', 
-                            ifelse(Month %in% c(3, 4, 5), 'Spring',
-                            ifelse(Month %in% c(6, 7, 8), 'Summer', 'Autumn'))))) %>%
-  mutate(Time.of.Day = as.factor(ifelse(Hour %in% c(6, 7, 8, 9, 10), 'Morning', 
-                                 ifelse(Hour %in% c(11, 12, 13, 14, 15),
-                                        'Afternoon', 'Night')))) %>%
-  mutate(Customer.ID = ifelse(is.na(as.character(Customer.ID)),
-                              'NoInfo', as.character(Customer.ID))) %>%
-  mutate(Cust_Y.N = as.factor(ifelse(Customer.ID == 'NoInfo', 'No', 'Yes'))) %>%
-  mutate(`Size/Type` = str_replace(`Size/Type`, "Regular Price", "Regular")) %>%
-  dplyr::select(-c(Date, Time, Gross.Sales, Tax, Event.Type, Discounts, Notes))
-
-clean <- clean[!duplicated(clean), ]
-```
-
-# Loyal Customer?
-
-## Analysis and Our View Point
-
-*Description and Rationale for the Chosen Analysis:*
-Define loyal customer as those who visit the store atleast once in a week in general, should have made a transaction within the last 60days(We have data till August-2018) and should have been a customer for atleast a month. Based on this definition, determine which customers are 'loyal'. This will help us either accept or reject the belief of Central Perk.Finally, visualizing behavioral differences between loyal customers and other customer by comparing summary statistics to gain more insights into the buying trends.
-
-*Execution and Results:*
-```{r, message = FALSE, warning=FALSE}
-library(dplyr)
-
-# Assume that once a week = a loyal customer
-loyal_cust_density <- 1/7
-
-# Filter data to only include 'known' customers - that is, customers with an ID.
-# Determine the customers duration, number of transactions, and profit
-# Filter for duration greater than 30(indicates month of potential days of visit)
-# Mutate to include a 'loyalty' factor based on the ratio of transactions to duration
-# Finally, filter loyal customers as those with density higher than 1/7
-
-loyal_customers  <- clean %>%
-  filter(!(Customer.ID == 'NoInfo')) %>%
-  group_by(Customer.ID) %>%
-  dplyr::summarise(most_recent = max(Timestamp),
-            duration = max(Timestamp) - min(Timestamp),
-            transactions = n_distinct(Timestamp),
-            profit = sum(Profit)) %>%
-  filter((duration > 30) & (most_recent > '2018-07-01')) %>%
-  mutate(density = transactions / as.integer(duration)) %>%
-  filter(density >= loyal_cust_density)
+The first step in the k-means algorithm is in choosing the value of k. To identify the value of k, we evaluate the clustering algorithm for different values of k and choose a k depending on the cluster performance. 
 
 
-loyal_customers_IDs <- dplyr::select(loyal_customers, Customer.ID)
-# Calculate the number of loyal customers to caompare with total customer base
-nrow(loyal_customers_IDs)
-n_distinct(clean$Customer.ID) - 1 # subtract 1 to remove 'NoInfo'
-```
-*Interpretation and Conclusions:*
-From the output we can clearly see that only 119 out of 31811(known customers - those with ID's) are loyal. That means not even 1% of the customer base is loyal. Hence, based on our definition of loyal customers, we would like to reject the belief that Central Perk has loyal customers.
+## Evaluating Clustering Performance
 
-## Comparing Loyal customers with others
+The clustering performance depends on the number of clusters we choose. The clusters formed should be such that there is high similarity within a cluster and low similarity between the clusters. 
 
-*Description and Rationale for the Chosen Analysis:*
-Now that we can identity our loyal customers, we wanted to compare their usual buying patterns against other customers.   
-```{r}
-# First the loyal customers
-loyal <- subset(clean, Customer.ID %in% loyal_customers_IDs$Customer.ID)
-summary(loyal)
+We are looking at the two metrics to evaluate that the clustering performance:
+* SSE (Sum of Squared Errors) -- SSE captures the sum of squared distance between each point and its centroid. Therefore, lower the SSE, higher the similarity between the point and its cluster 
+* Silhoutte Coefficient -- SC is an alternative metric for cluster performance evaluation that is calculated based on the distance of a point to its cluster centroid and the nearest point outside of the cluster 
 
-# Then the other customers
-other <- subset(clean, !(Customer.ID %in% loyal_customers_IDs$Customer.ID))
-summary(other)
+The performance we observed from the Silhouette coefficient was similar to the SSE. 
 
-# Tidy the data for visulizing by adding a customertype label
-loyal <- mutate(loyal, customertype = 'loyal')
-other <- mutate(other, customertype = 'other')
-combined <- rbind(loyal, other)
-```
-*Interpretation:*
-Just by looking at the summary statistics for the two groups we can see that there are some differences like, time of the day they visit(peak rush hour) and so on. So we wanted to go ahead and visualize these differences using plots, from which we can learn more about our loyal customers 
 
-## Visualizing the Differences
-```{r}
-# Compare Category of items purchased
-ggplot(combined, aes(x=customertype, fill=factor(Category))) +
-  geom_bar(position = "fill") +
-  labs(title = "Compare Category Proportions",
-       y = "Proportion", x = "Customer Type") + 
-  myTheme
-```
-*Interpretation:*
-From the above bar plot, we can see that loyal customers purchases a higher proportion of coffee compared to other customers. Also proportion of Extras for loyal customers is less compared to other.
+### Method 1: Elbow curve
 
 ```{r}
-# Comapre Size/Type of items purchased
-ggplot(combined, aes(x=customertype,fill=factor(`Size/Type`))) + 
-  geom_bar(position = "fill") + 
-  labs(title = "Compare Item Proportions",
-       y = "Proportion", x = "Customer Type") +
-  myTheme
-```
-*Interpretation:*
-Proportion of 'Large' items ordered by loyal customers is higher as compared to other customers. 
-
-```{r}
-# Hour
-ggplot(combined, aes(x=customertype,fill=factor(Hour))) + 
-  geom_bar(position = "fill") +
-  labs(title = "Compare Transaction Volume by Hour",
-       y = "Proportion", x = "Customer Type") + 
-  myTheme
-```
-*Interpretation:*
-From the above visualization, we can see that loyal customers tend to visit much earlier in the day. More than 50% of loyal customers visit during the hours 6-9am as compared to 25% for other customers. This might be because most of the loyal customers might be grabing coffee on their way to work.
-
-```{r}
-# Month
-ggplot(combined, aes(x=customertype,fill=factor(Month))) + 
-  geom_bar(position = "fill") +
-  labs(title = "Compare Transaction Volume by Month",
-       y = "Proportion", x = "Customer Type") +
-  myTheme
-```
-*Interpretation:*
-Proportion of traansaction volume is uniformly distributed across all the months, both for loyal and other customers. 
-
-## More Granular Comparision
-
-#### Comparing overall profit
-```{r}
-# Profit contribution by 'loyal' vs 'other'
-ggplot(combined, aes(x=customertype, y=Profit)) +
-  geom_bar(stat='identity', fill=col3) +
-  labs(title = "Compare Overall Profit",
-       y = "Overall Profit", x = "Customer Type") +
-  myTheme
-```
-
-```{r}
-# However, as can be seen below, profit per loyal customer vs profit per other customer is in stark contrast.
-profit_per_loyal <- sum(loyal$Profit) / n_distinct(loyal$Customer.ID)
-profit_per_other <- sum(other$Profit) / n_distinct(other$Customer.ID)
-print("loyal:")
-print(profit_per_loyal)
-print("others:")
-print(profit_per_other)
-```
-
-#### Comparing Average profit
-```{r}
-type = c("loyal", "others")
-values = c(72.0, 4.2)
-
-x = cbind(type, values)
-dx <- data.frame(x)
-dx$values <- as.numeric(values)
-ggplot(dx, aes(type, values)) +
-  geom_bar(stat = 'identity', fill=col3) +
-  labs(title = "Average Profit Comparison",
-       y = "Average Profit($)", x = "Customer Type") +
-  myTheme
-
-```
-
-*Interpretation:*
-From the above visualization we see that loyal customers overall profit is much lower in contribution than other customers. This is because we only have 119 loyal customers. To compare them, we want to look at profit per customer. Clearly loyal customers contribute a lot per person, nearly '$72' as compared to '$4' for other customers. This, is an indicator that if we can increase our loyal customer base it will eventually improve our profits.  
-
-
-```{r}
-# Changing gears and looking at profit drivers in category.
-category_profits <- clean %>%
-  group_by(Category) %>%
-  dplyr::summarise(contribution = sum(Profit))
-
-ggplot(category_profits, aes(x = Category, y = contribution)) +
-  geom_bar(stat = 'identity', fill=col3) +
-  labs(title = "Profit by Category",
-       y = "Overall Profit", x = "Category") + myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-*Interpretation:*
-Being a coffee shop it is no wonder that the top selling category is Coffee. We can maybe leverage the next best category, Food, in combination with Coffee in order to increase purchases.
-
-
-```{r}
-hour_transactions <- clean %>%
-  group_by(Hour) %>% dplyr::summarise(No.of.Transactions = n_distinct(Timestamp))
-
-ggplot(hour_transactions, aes(x = Hour, y = No.of.Transactions)) +
-  geom_bar(stat = 'identity', fill = col3) +
-  labs(title = "Transactions by Hour") + myTheme
-```
-*Interpretation:*
-Looking at transactions by hour, we see that demand is relatively stable at 7am and from 12 to 3pm with spikes between 8 and 11am. Also, demand falls off precipitously and steadily from 4pm to closing time. This suggest us that we might need to come up with some offers during the evening hours to increase customer inflow during that period.
-
-
-```{r}
-hour_transactions <- clean %>% filter(Category == 'Beers') %>%
-  group_by(Hour) %>% dplyr::summarise(No.of.Transactions = n_distinct(Timestamp))
-
-ggplot(hour_transactions, aes(x = Hour, y = No.of.Transactions)) +
-  geom_bar(stat = 'identity', fill = col3) +
-  labs(title = "Beers Demand by Hour") + myTheme
-```
-
-*Interpretation:*
-The demand for beers by hour peaks between 5-7pm in the evening and this is the time when coffee demand starts declining. This might be because the customers who drink coffee and beers are different. But as we can see the number of transactions from the entire dataset is very less. If we can incentivize our coffee customers with some kind of coupons for Non- Caffeinated drinks and make them visit the store during the evening hours we might improve our Beer sales and increase our overall sales in the evening hours before closing.   
-
-
-```{r}
-# Month
-month_txn <- clean %>% group_by(Month) %>%
-  dplyr::summarise(No.of.Transactions = sum(Profit))
-
-ggplot(month_txn, aes(x = Month, y = No.of.Transactions)) +
-  geom_bar(stat = 'identity', fill = col3) +
-  labs(title = "Transactions by Month") + myTheme
-```
-*Interpretation:*
-Looking at transactions by month, we see that demand is less in the winter months from November through February.
-
-*Description and Rationale for the Chosen Analysis:*
-If we can find items that are often purchased in quantities greater than 1, we can come up with some bundles to increase our sales by upselling such items. 
-
-```{r}
-item_quantity <- clean %>% group_by(Item) %>%
-  dplyr::summarise(quantity = mean(Qty)) %>%
-  filter(quantity > 1.1)
-
-ggplot(item_quantity, aes(x = Item, y = quantity)) +
-  geom_bar(stat = 'identity', fill=col3) + 
-  labs(title = "Items Purchased in Quantity greater than 1") +
-  myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-*Interpretation:*
-All the items in the above chart are often purchased in quantities greater than 1 and hence we can try experiment some bundles with these items and based on the response either stick with bundles or discard this idea.
-
-
-```{r}
-# Day of the Week
-by_day_txn <- clean %>% group_by(Weekday) %>%
-  dplyr::summarise(No.Of.Transactions = n_distinct(Timestamp))
-
-ggplot(by_day_txn, aes(x = reorder(Weekday, -No.Of.Transactions), y = No.Of.Transactions)) +
-  geom_bar(stat = 'identity', fill = col3) +
-  labs(title = "Transactions by Day of Week", x = "Weekday") + myTheme
-```
-*Interpretation:*
-Looking at transactions by day, we see that demand is highest on weekends and flat during the weekdays. This is expected to be the usual trend.
-
-```{r}
-# Looking at sales by day
-weekends <- filter(clean, Weekday == 'Saturday' | Weekday == 'Sunday')
-weekends <- mutate(weekends, daycategory = 'weekend')
-weekdays <- filter(clean, Weekday != 'Saturday' & Weekday != 'Sunday')
-weekdays <- mutate(weekdays, daycategory = 'weekday')
-
-combined_daycats <- rbind(weekends, weekdays)
-
-weekdays_rev <- dplyr::summarise(weekdays, tot_rev = sum(Net.Sales))
-weekend_rev <- dplyr::summarise(weekends, tot_rev = sum(Net.Sales))
-
-combined_daycat_rev <- rbind(weekdays_rev, weekend_rev)
-
-ungroup(combined_daycat_rev) %>%
-  mutate(tot_r = tot_rev, pct_rev = tot_rev*100/sum(tot_rev))
-
-combined_daycat_rev %>% dplyr::summarise()
-```
-*Interpretation:*
-We see that 62.8% of sales are on weekdays and 37.2% are on weekends. Even though weekend comprises of only two days a large portion of sales is happening on the Weekend. This indicates that there is a scope for improvement during the weekdays.
-
-# Understanding the Demand Pattern across Categories
-
-## Overall Category Demand
-
-*Description and Rationale for the Chosen Analysis:*
-We wanted to understand the demand for items across various categories in order to get a better understanding of areas which can be explored for potential development.
-
-```{r}
-#Plotting the demand in percentage across all the categories
-g1 = ggplot(clean, aes(x = Category))+
-  geom_bar(aes(y = (..count..)/sum(..count..)), fill=col3) +
-  geom_text(aes(y = ((..count..)/sum(..count..)),
-                label = scales::percent((..count..)/sum(..count..))),
-            stat = "count", vjust = -0.20) +
-  scale_y_continuous(labels = percent) +
-  labs(title = "Category Demand", y = "Percent", x = "Category")
-
-g1 + scale_x_discrete(labels=c('Beans', 'Beers', 'Cereal', 'Coffee',
-                               'Extras', 'Food', 'Non-Caffeinated', 'Tea')) +
-  theme(axis.text.x = element_text(size=9, angle=25)) + myTheme
-```
-*Interpretation:*
-The top three categories in demand are coffee (59%), Extras (21%) and Food (13%).
-
-```{r}
-#Sorting the item column to identify the top 20 items with highest demand
-top_items <- sort(table(clean$Item),decreasing=T)
-head(top_items, n=20)
-```
-
-## Category Demand by Month, Day and Hour
-
-*Description and Rationale for the Chosen Analysis:*
-We want to analyse how the categories fare across different timelines - month, days, hour - in increasing granularity to gain more insights into the demand patterns.
-
-```{r}
-#Now we check how the demand for the categories fare across the 12 months
-cat_demand_month = with(clean, table(Category, Month))
-
-c <- data.frame(cat_demand_month)
-ggplot(data = c, aes(x = Month, y = Freq, color = Category, group=Category))+
-  geom_line() + 
-  labs(title = "Category Demand by Month",
-       y = "Count", x = "Month") + myTheme
-```
-
-
-```{r}
-#Analysing the demand across categories by hour
-cat_demand_hour = with(clean, table(Category, Hour))
-
-#In order to plot the category demand across hours, we convert the above table into a dataframe
-d <- data.frame(cat_demand_hour)
-ggplot(data = d, aes(x = Hour, y = Freq, color = Category, group=Category))+
-  geom_line() + 
-  labs(title = "Category demand by Hour",
-       y = "Count", x = "Hour") + myTheme
-```
-
-```{r}
-#Let us now analyse how the net sales across categories fare across months
-s <- aggregate(Net.Sales ~ Category + Month, clean, sum)
-
-ggplot(data = s, aes(x = Month, y = Net.Sales, color = Category, group=Category))+
-  geom_line() +labs(title = "Net Sales Demand Category by Month",
-                    y = "Net Sales", x = "Category") + 
-  myTheme 
-```
-
-
-```{r}
-#Let us now analyse how the net sales across categories fare across days of week
-s <- aggregate(Net.Sales ~ Category + Weekday, clean, sum)
-
-ggplot(data = s, aes(x = Weekday, y = Net.Sales,
-                     color = Category, group=Category))+
-  geom_line() + labs(title = "Net Sales Demand Category by Weekday",
-                    y = "Count", x = "Category") + myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-
-# Clustering
-
-*Description and Rationale for the Chosen Analysis:*  
-The rationale behind clustering is to see if we can segment our customers into specific groups. If the clustering information is useful, then we will better understand our customer base and behavior, and we can even tailor our marketing strategies and implementations based on clusters. Clustering that included multiple variables yielded terrible results, so we decided to only do it on the time of day and whether or not a transaction had an ID (we treated this as either you are or are not a customer). 
-
-## K-modes clustering
-
-*Execution and Results:*
-```{r}
-clean_clust <- dplyr::select(clean, Time.of.Day, Cust_Y.N)
-
-set.seed(1)
-
-sil_curve <- c()
-for (k in 1:6) {
-  kfit <- kmodes(clean_clust, k)
-  #PAM interally computes the silhouette measure
-  sil_curve[k] <- sum(kfit$withindiff)
+SSE_curve <- c()
+for (n in 1:10) {
+  k_cluster <- kmeans(cust_raw_fin_1[2:21], n)
+  print(k_cluster$withinss)
+  sse <- sum(k_cluster$withinss)
+  SSE_curve[n] <- sse
 }
-sil_curve = sil_curve[1:6]
-plot(1:6, sil_curve, type="b", xlab="Number of Clusters", ylab="Silhouette")
+plot(1:10, SSE_curve, type="l", xlab="Number of Clusters", ylab="SSE")
 ```
 
-*Interpretation and Conclusion:*
-There were six possible combinations of clusters, and this plot indicates that we should use all 6 because there is a considerable drop in the silhouette coefficient when going from 5 clusters to 6 clusters.
+From the plot, we can see that the for K = 4 the SSE drop is steep and after K = 4 the SSE is almost constant.
 
 
-## Visualization and Interprettion of Clusters
-```{r, message=FALSE}
-# Choose six clusters
-k = 6
+### Method 2: Silhoutte Coefficient
 
-kfit <- kmodes(clean_clust, k)
-clean_clust$cluster <- kfit$cluster
+For the calculation of the Silhouette Coefficient, we need to sample the dataset because computing the Silhoutte coefficient on the entire dataset is computationally tough. Therefore, we sampled 10000 records from the data, and based on the Silhoutte coefficient, generalized the K value for the entire dataset. 
 
-clean_clust$Category <- clean$Category
-clean_clust$Category <- mapvalues(clean_clust$Category,
-                                  from = 'Non-Caffeinated Drinks', to = 'Decaf')
-clean_clust$Season <- clean$Season
+We observed that the k value recommended by the Silhouette Coefficient is the same as SSE. 
 
 
-table(clean_clust$cluster, clean_clust$Time.of.Day)
-table(clean_clust$cluster, clean_clust$Cust_Y.N)
-# six different customers split by time of day and whether or not they are a member
-table(clean_clust$cluster, clean_clust$Season)
-table(clean_clust$cluster, clean_clust$Category)
+## Creating Clusters
 
-# Percentage of seasons across clusters
-clust_1 = dplyr::filter(clean_clust, cluster == 1)
-season_1 = ggplot(clust_1, aes(Season)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 1') +
-  myTheme
-
-clust_2 = dplyr::filter(clean_clust, cluster == 2)
-season_2 = ggplot(clust_2, aes(Season)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 2') +
-  myTheme
-
-clust_3 = dplyr::filter(clean_clust, cluster == 3)
-season_3 = ggplot(clust_3, aes(Season)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 3') +
-  myTheme
-
-clust_4 = dplyr::filter(clean_clust, cluster == 4)
-season_4 = ggplot(clust_4, aes(Season)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 4') +
-  myTheme
-
-clust_5 = dplyr::filter(clean_clust, cluster == 5)
-season_5 = ggplot(clust_5, aes(Season)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 5') +
-  myTheme
-
-clust_6 = dplyr::filter(clean_clust, cluster == 6)
-season_6 = ggplot(clust_6, aes(Season)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 6') +
-  myTheme
-
-ggarrange(season_1,season_2,season_3,season_4,
-          season_5,season_6,nrow = 3, ncol = 2, labels = c(1:6))
-
-```
-
-*Interpretation and Conclusion:*
-The tables give us a good indication of the distribution we see from clustering. We have 6 distict clusters that are completely separated by time of day, and whether or not they were a recognized customer. In regard to Season, it does not seem like there is much of a difference in the proportion of seasons between clusters; summer is always the largest, followed by spring, fall, and finally, winter. There is some contention, however, that autumn and spring are about even for clusters 3 and 6. The fact that winter is the lowest confirms what we had found earlier, and it is an indication that we may need to do something to increase demand during the winter.
-
-
+Applying the K-means algorithm on the transformed and normalized data with the number of clusters as 4. 
 
 ```{r}
-cat_1 = ggplot(clust_1, aes(Category)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 1') +
-  myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-cat_2 = ggplot(clust_2, aes(Category)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 2') +
-  myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-cat_3 = ggplot(clust_3, aes(Category)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 3') +
-  myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-cat_4 = ggplot(clust_4, aes(Category)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 4') +
-  myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-cat_5 = ggplot(clust_5, aes(Category)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 5') +
-  myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-cat_6 = ggplot(clust_6, aes(Category)) + 
-  geom_bar(aes(y=..count../sum(..count..)), fill=col3) + 
-  scale_y_continuous(labels=percent_format()) +
-  ylab('Percentage') + 
-  ggtitle('Cluster 6') +
-  myTheme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-ggarrange(cat_1,cat_2,cat_3,cat_4,cat_5,cat_6,
-          nrow = 3, ncol = 2, labels = c(1:6))
-
+set.seed(123)
+k_cluster <- kmeans(cust_raw_fin_1[2:21], 4, nstart=25, iter.max=1000)
 ```
 
-*Interpretation and Conclusion:*
-Just as we saw with the previous six charts, the distribution of categories purchased is more or less the same. That being said, there seems to be a larger amount of food being purchased in the morning and the afternoon. On the contrary, beer is purchased almost exclusively at night, which is intuitive. We also see that tea and decaffeinated drinks are purchased with more frequency during the afternoon and night, which is also intuitive since people do not want to be kept awake by caffeine. This information provides a picture of our customer's behavior, and we can use it to strategically come up with product recommendations.
 
+# Cluster Profiling
 
-# Association Rules on Category
+Customer segments provide clear information with respect to which customers fall under which segment. This understanding is crucial and will be leveraged for decision making. The output of a clustering algorithm doesn't explain what each cluster comprises of. If and only if the cluster composition is explained do the mathematically-derived clusters become business-consumable customer segments. 
 
-*Description and Rationale for the Chosen Analysis:*
-We wanted to use association rules to see whether we can further gain non-obvious insights into our customers' purchase behavior. We tried using the data set as a whole (only factor variables), but we were not obtaining any beneficial information. We then decided to turn the category factor into a item matrix to see if specific categories were co-purchased.
+After obtaining the clusters, it is imperative that we understand what observations fall under each cluster. This helps us in understanding the patterns that make up the cluster. Cluster profiling is the method by which we try to explain the similarity within clusters and identify patterns that make up the cluster. 
 
+## Mapping clusters and raw data
 
-*Execution and Results:*
-```{r}
-# We see that food an coffee purchased together a lot; use for Erik's recommendation
+The clusters identified are first mapped to the original dataset to identify what set of customers make up each cluster. 
 
-new_cats <- ddply(clean,c("Timestamp"),
-                  function(df1)paste(df1$Category, collapse = ","))
+```{r eval = FALSE}
+cust_raw_fin_1$cluster_no <- k_cluster$cluster
 
-new_cats$Timestamp <- NULL
-colnames(new_cats) <- c("cats")
-write.csv(new_cats,"new_cats.csv", quote = FALSE, row.names = TRUE)
-
-txn_cats = read.transactions(file="new_cats.csv", rm.duplicates= TRUE,
-                             format="basket",sep=",",cols=1)
-
-txn_cats@itemInfo$labels <- gsub("\"","",txn_cats@itemInfo$labels)
-
-summary(txn_cats)
-rules <- apriori(txn_cats, parameter = list(sup = 0.01, conf = 0.5, target="rules"),
-                 control = list (verbose=F)) %>%
-  subset(subset = lift > 0) %>%
-  sort(by = "lift")
-inspect(rules)
-
+# Merging the original dataset to get the cluster details
+cluster_data <- merge(sun_fin_out, cust_raw_fin_1[,c("pkey","cluster_no")])
 ```
 
-*Interpretation and Conclusion:*
-The rules were subject to some constraints: 
-1) The support must be at least .01 so infrequent occurences do not appear.
-2) Confidence was set to .5 to ensure that the variables are conditional.
-
-After applying the constraints, we can see that extras are purchased with coffee, as are food. This finding supports our earlier points, and it is one that we can exploit for a recommendation regarding the bundling of products.
+```{r echo = FALSE}
+cluster_data <- fread('sun_w_clustersv3.0.csv', stringsAsFactors = FALSE)
+```
 
 
-# Recommendations
-
-+ Implement a punch card for a free coffee for frequent visitors.
-+ Offer a liquor shot as an extra in winter and offer a "buy any two food items, get one coffee free" deal.
-+ Offer a discount on coffee from noon to 5:00 P.M., and administer a survey to loyal customers.
-+ Offer a "BOGO" beer coupon to morning customers for a newly implement happy hour from 5PM to 7PM.
-+ Gather costs to discern our best and worst items in terms of profit for better analysis related to profit.
-
+# Conclusion
