@@ -1,538 +1,563 @@
 ---
-title: "HW 3 - Customer Segmentation for Sun Country Airlines"
-author:
-- Jesse Sprinkel
-- Haojin Jia
-- Chandrakanth Tolupunoori
-- Anshuman Vijayvargia
-- Priyanka Singhal
-date: "10/20/2018"
+title: "Business Plan for Central Perk"
+author: Pranav Srinivas Nagavelli, Samira Palagiri, Tarun Singh, William Thomas, Yuni
+  Suter
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
     df_print: paged
     toc: yes
-    toc_depth: '4'
+    toc_depth: '2'
   pdf_document:
-    number_sections: yes
     toc: yes
-    toc_depth: 4
-abstract: |
-  This is the white paper and technical details of our analysis and recommendations.
-urlcolor: blue
+    toc_depth: 2
 ---
 
-## Situation:
+rmarkdown::render("test.Rmd", output_format="pdf_document")
+# Business Problem
 
-Our objective is to analyze the historical flight bookings data and
-profiles the customers into segments which would eventually help
-SunCountry to better market and advertise to their customers.
+Central Perk owners believe that their customer base is loyal and that their sales have been a consistent year on year. However, these beliefs are based on intuition and anecdotal information; not from a rigorous exploration of their sales data. Additionally, they don't have a good sense of their customer's purchase details, purchase patterns, nor general volume distribution. Gaining this knowledge is critical to developing plans to increase revenue and smoothing demand patterns without alienating the existing customer base or relying on new customers.
 
-## Complication:
-While the data set is quite rich and extensive, it is computationally expensive. Adding to this problem, we would like to use a technique called clustering where we attempt to find natural segments in the data. Using clustering involves a couple assumptions: we need to assume that you do have customer groups that behave differently, and we need to pick the right features to cluster on that accurately differentiate the groups. Being scientific in our approach is difficult but will allow us to base our customer segments on data as much as possible.
+# Approach
 
-## Our Approach
-Because the dataset is so large we ran our analysis on multiple samples of 5,000 unique trips out of the total amount of 1.17 million trips. We used a particular method of clustering called k-prototypes and separated the groups based on the following: starting city, destination, booking channel, group size, type of trip (round trip vs. one-way), time of year, membership status, and how far in advance the ticket was booked. While there may be differences between our samples and the final dataset, we think they would be negligible and not impact our final conclusions.
+We want to approve the Central Perk's hypothesis by investigating the data to conclude the following aspects:
 
-# Preparedness
-### Brief Summary of the Dataset
+* Are the sales increasing for Central Perk year-on-year?
+* Whether the existing customer base is "LOYAL"?
+* What type of customer segments exists in our data?
+* Can we infer any product preferences based on the customer segments?
 
-What does the data look like?:
+# Data Exploration
 
-* 3.4M+ records containing 2 years of historical flight bookings 
-* ~ 1.1M unique booking PNRs
-* Demographic details like EncryptedName, Gender, Age, PostalCode
-* Details about Ufly Member status, TravelClass, BookingChannel  
+Loading required libraries and associated packages.
 
-## R Libraries
+``` {r, message = FALSE}
+#rm(list = ls())
+#install.packages('naniar')
+#install.packages('Amelia')
+#install.packages('tidyverse')
 
-**Please make sure successfully install the packages before reproducing the research**
-
-```{r lib, message = FALSE, warning=FALSE,cache=FALSE}
-library(dplyr)
-library(tidyr)
-library(ggplot2)
 library(stringr)
 library(lubridate)
-library(rsconnect)
-library(R.utils)
-library(clustMixType)
-library(cluster)
-library(stringr)
-library(cowplot)
+library(Amelia)
+library(naniar)
+library(dplyr)
 library(magrittr)
+library(ggplot2)
+library(reshape2)
+library(plyr)
+library(arules)
+library(arulesViz)
+library(zoo)
+library(tidyverse)
+library(gridExtra)
+library(DescTools)
 ```
 
-**Set working directory**
+##Importing the data
 
-```{r setup, message = FALSE, warning=FALSE,cache=TRUE}
-knitr::opts_knit$set(root.dir = 'D:/Semester 2/Exploratory 6410/HW3/HW 3')
+The Central Perk data is spread across three CSV files. Importing the data from three files and summarizing the data.
+
+```{r setup}
+knitr::opts_knit$set(root.dir = "C:\\Users\\Pranav\\Desktop\\MSBA\\6410 - Exploratory Data Analytics and Visualization\\HW 4\\HW 4\\Central Perk")
+#knitr::opts_chunk$set(cache=FALSE)
 ```
 
-## Data Exploration
+``` {r, cache = TRUE, warnings = FALSE}
+filenames <- dir("C:\\Users\\Pranav\\Desktop\\MSBA\\6410 - Exploratory Data Analytics and Visualization\\HW 4\\HW 4\\Central Perk") 
+#Reading all files in the working folder
+dfs <- do.call(rbind, lapply(filenames, function(x) cbind(read.csv(x, stringsAsFactors = TRUE, na.strings = c('', NA, ' ')))))
 
-**Load the dataset and look at the various columns and datatypes**
-
-```{r, message = FALSE, warning=FALSE,cache=TRUE}
-# Make sure data with huge numbers is read properly
-options("digits")
-# We are making the options to 14 so that it can read bigger integers. It was 7 previously.
-options(digits = 14)
-# Read the data
-suncountry <- read.csv("SunCountry.csv", stringsAsFactors = FALSE)
-# Look at the data types and head values in every column
-glimpse(suncountry)
+summary(dfs)
+head(dfs)
 ```
 
-**Filtering the data for SunCountry**
+__Conclusion__
+The data has 221561 rows and 13 columns with missing values which have to be treated and few of the columns assigned to different class.
 
-```{r, message = FALSE, warning=FALSE,cache=TRUE}
-table(suncountry$MarketingAirlineCode)
-#We are filtering the rows which have airline as Sun Country
-Sun <- suncountry %>% filter(MarketingAirlineCode == "SY")
-```
+## Cleaning
+Based on the summary of the data, we can want to explore the following issues:
 
-## Data Cleaning
+* We see that few of the numeric columns have characters which have to be treated
+* There are missing values that have to be treated
 
-**Replacing missing values and re-grouping**
+Further crucial data cleaning steps include:
 
-```{r, message = FALSE, warning=FALSE,cache=TRUE}
-# Member status column
-table(Sun$UflyMemberStatus)
+* Check for duplicate records 
+* Assign right class types to the columns
 
-#We observe that all the non-members have blank values in Status column 
+The following pattern on the left is replaced with their appropriate item in the data:
 
-#We are considering flyers to be non-member if they have member status as blank.
-Sun <- Sun %>% mutate(UflyMemberStatus = ifelse(UflyMemberStatus == "", "Non Ufly Member", UflyMemberStatus))
-
-table(Sun$BookingChannel,useNA = "always")
-#We are classifying all the booking channel which were via airports as 'Other' 
-Sun$BookingChannel[Sun$BookingChannel!="Outside Booking" & 
-                      Sun$BookingChannel!="SCA Website Booking" & 
-                      Sun$BookingChannel!="Tour Operator Portal" & 
-                      Sun$BookingChannel!="Reservations Booking" & 
-                      Sun$BookingChannel!="SY Vacation"] <- "Other"
-# Converting the column to factor for later analysis
-Sun$BookingChannel<-as.factor(Sun$BookingChannel)
-```
-
-**Exploring the data for missing and erroneous values**
-
-```{r, message = FALSE, warning=FALSE,cache=TRUE}
-# GenderCode column
-table(Sun$GenderCode)
-# We see that there are blank values in GenderCode, So we removed those rows 
-Sun <- Sun %>% filter(GenderCode %in% c("F", "M", "U"))
-# birthdateid column
-summary(Sun$birthdateid)
-# There are negative values in the id, but we are not going to remove it as they are just unique id's
-
-# Age Column
-summary(Sun$Age)
-#We are removing rows with error values and select age between [0,115]
-Sun <- Sun[!(Sun$Age < 0 | Sun$Age > 115),]
-# Distribution after cleaning the Age column
-x <- Sun$Age
-#Plotting a normal distribution curve for age
-h <-hist(x, breaks=20, xlab="Age", main="Age Distribution") 
-xfit<-seq(0,110,length = 50) 
-yfit<-dnorm(xfit,mean=mean(x, na.rm = T),sd=sd(x, na.rm = T)) 
-yfit <- yfit*diff(h$mids[1:2])*length(x) 
-lines(xfit, yfit, col="blue", lwd=2)
-```
-
-**Missing and erroneous values continued**
-
-```{r, message = FALSE, warning=FALSE,cache=TRUE}
-# Coupon Sequence Number column
-table(Sun$CouponSeqNbr)
-# We can see that as the coupon seq nbr increases, count decreases.
-# We wanted to see if all PNR's is not starting with a couponSeqNo of 1.
-Sun_temp<- Sun %>% select(PNRLocatorID, CouponSeqNbr) %>% 
-  group_by(PNRLocatorID) %>% summarise(min_seq_nbr = min(CouponSeqNbr)) %>% 
-  filter(min_seq_nbr > 1)
-#Looking at the top 6 rows of Sun_temp
-head(Sun_temp)
-
-# As we can see that the min_seq_nbr is greater than 1,
-# we will remove them as the journey has to start with CouponSeqNbr 1
-Sun <- Sun %>% group_by(PNRLocatorID) %>%
-  mutate(flag = ifelse(min(CouponSeqNbr) != 1, 1, 0)) %>% filter(flag == 0)
-
-```
-
-Reference: https://www.flyuia.com/hu/en/information/uia-flight-coupons
-
-## Data Transformation
-
-  Now that we have cleaned all the variables of interest, we went ahead to create a sample to transform our columns. We also observed that we have multiple rows in single PNR for each leg of the trip for each customer. We want to aggregate the data to bring it to a level where we have one row for each customer without losing much of the other information by generating new columns and using aggregation.
-
-**Sampling the data for data transformation**
-
-  The size of the dataset is very large. So we wanted to take a sample and run all the data transformation steps on a smaller sample consisting of data related to 5000 unique PNR's. 
-```{r, message = FALSE, warning=FALSE,cache=TRUE}
-# Obtain Unique PNRs
-uniquePNRs <- unique(Sun$PNRLocatorID) 
-
-# To produce the same samples every time set the seed
-set.seed(2000)
-sample_PNRs <- sample(uniquePNRs,5000)
-
-# Obtaining data related to the sampled 5000 PNRs
-Sun_sample <- Sun %>% filter(PNRLocatorID %in% sample_PNRs)
-```
-
-**Transformation to populate the First_City for booking**
-
-  In order to aggregate multiple rows for each PNR, we need a unique id. We Assume that a combination of four columns "PaxName", "EncryptedName", "GenderCode", "birthdateid" will be able to generate a unique id needed for aggregation.
-Based on the unique id we group the data and pick the ServiceStartCity in the first row of the group as the First_City of the journey.
-
-```{r, warning = FALSE, message = FALSE}
-#Data Transformation
-library(dplyr)
-Sun_sample <- Sun_sample %>% mutate(uid=paste(PaxName,EncryptedName,GenderCode,birthdateid,sep=""))
-
-#As we can see there are multiple rows for many columns, we wanted to find a primary key by which we can group and transform the data.
-First_City <- Sun_sample %>%arrange(PNRLocatorID, CouponSeqNbr) %>% group_by(PNRLocatorID, PaxName) %>% do(data.frame(First_City = first(.$ServiceStartCity)))
-
-#Here, we join both the columns by PnrLocatorId and Passenger Name
-Sun_sample <- merge(Sun_sample,First_City,
-                   by.x=c("PNRLocatorID","PaxName"),
-                   by.y = c("PNRLocatorID","PaxName"))
-```
-
-**Transformation to populate the Last_City for booking**
-
-  Based on the unique id we group the data and pick the ServiceEndCity in the last row of the group as the Last_City of the journey.
-
-```{r, message = FALSE, warning=FALSE}
-Last_City <-Sun_sample %>%
-  arrange(PNRLocatorID,CouponSeqNbr)%>%
-  group_by(PNRLocatorID,PaxName)%>% 
-  do(data.frame(Last_City=last(.$ServiceEndCity)))
-
-Sun_sample <-merge(Sun_sample,Last_City,
-                   by.x=c("PNRLocatorID","PaxName"),
-                   by.y = c("PNRLocatorID","PaxName"))
-
-```
-
-**Transformation to find if customers stay at a destination in a round trip**
-
-  If we only look at the First_City and Last_city we might be missing out on information about the intermediate stay where the customer actually intended to travel. So we are looking at the time difference between all the legs of the journey and Assume that the one with the maximum difference and pick the ServiceEndCity of that leg as the Final_Destination.
-
-```{r warning = FALSE, message = FALSE}
-
-#Convert Service Start date to Date type
-Sun_sample$ServiceStartDate <- as.Date(Sun_sample$ServiceStartDate)
-
-#The place of maximum stay during the trip.
-Max_Stay <- Sun_sample%>%
-  arrange(PNRLocatorID, CouponSeqNbr) %>%
-  group_by(PNRLocatorID, PaxName) %>%
-  mutate(stay = lead(ServiceStartDate)-ServiceStartDate, default=0) %>%
-  select(PNRLocatorID, PaxName, ServiceStartCity, ServiceEndCity, ServiceStartDate, stay)
-Max_Stay$stay[is.na(Max_Stay$stay)] <- 0
-Max_Stay$stay <- as.numeric(Max_Stay$stay)
-
-Final_Destination <- Max_Stay %>%
-  group_by(PNRLocatorID, PaxName) %>%
-  do(data.frame(Final_Destination = first(as.character(.$ServiceEndCity)[.$stay==max(.$stay)])))
-Sun_sample <- merge(Sun_sample, Final_Destination,
-                   by.x=c("PNRLocatorID","PaxName"),
-                   by.y = c("PNRLocatorID","PaxName"))
-
-```
-
-**Transformation for round trip and group size**
-
-  We wanted to differentiate customer based on if they booked for a round trip or on way and also based on the fact that if they booked as a group or as individuals. So we generated a flag "round_trip" to capture this information based on First_City and Last_City. Then we use the unique id generated to count the group size based on the number of unique values within each PNR and then create a flag "group" if the group size is greater than 1.    
-
-```{r warning = FALSE, message = FALSE}
-Sun_sample <- Sun_sample%>%
-  mutate(round_trip = ifelse(as.character(First_City)==as.character(Last_City), 1, 0))
-
-#We look at the group size, number of people who traveled together in each trip.
-Sun_sample <- Sun_sample %>%
-  group_by(PNRLocatorID) %>%
-  mutate(group_size= length(unique(uid)))
-
-Sun_sample <- Sun_sample %>%
-  group_by(PNRLocatorID)%>%
-  mutate(group = ifelse(group_size > 1, 1, 0))
-
-```
-
-**Transformation to calculate the number of days in advance the booking was made and also look for seasonality**
-
-  We also wanted to differentiate and target our customers differently based on the number of days in advance they book their tickets and also the time of the year they travel. So we used the "ServiceStartDate" and "PNRCreateDate" to generate these two values.
-
-```{r warning = FALSE, message = FALSE}
-library(lubridate)
-Sun_sample$ServiceStartDate<-as.Date(Sun_sample$ServiceStartDate)
-#Convert ServiceStartDate from factor to Date format
-Sun_sample<- Sun_sample %>%
-  group_by(PNRLocatorID, PaxName) %>% mutate(month_no = month(ServiceStartDate))
-
-#We look at the number of days the ticket was booked in advance.
-Sun_sample$PNRCreateDate <- as.Date(Sun_sample$PNRCreateDate) 
-Sun_sample$ServiceStartDate <- as.Date(Sun_sample$ServiceStartDate)
-
-Sun_sample <- Sun_sample%>% 
-  mutate(days_pre_booked = as.numeric(floor(difftime(ServiceStartDate,
-                                                    PNRCreateDate,units=c("days")))))
-```
-
-**Selecting Columns of Interest for clustering**
-
-  Now that we have all the columns we think might impact our clustering results, we select those columns and generate the final aggregated table.
-
-```{r warning = FALSE, message = FALSE}
-#We transformed the data such that each row represents a unique customer-PNR combination.
-Sun_sample <- Sun_sample %>%
-  select(PNRLocatorID, uid, PaxName, ServiceStartDate, BookingChannel, Age,
-         UFlyRewardsNumber,UflyMemberStatus,First_City, Last_City,Final_Destination,
-         round_trip,group_size,group, month_no ,days_pre_booked)
-
-data_transformed <- Sun_sample %>%
-  group_by(PNRLocatorID, uid, PaxName) %>%
-  summarise(ServiceStartDate = first(ServiceStartDate),
-            BookingChannel = first(BookingChannel),
-            UFlyRewards = first(UFlyRewardsNumber),
-            UflyMemberStatus = first(UflyMemberStatus),
-            Age = max(Age),
-            First_City = first(First_City),
-            Last_City = last(Last_City),
-            Final_Destination = first(Final_Destination),
-            round_trip = first(round_trip),
-            group_size = first(group_size),
-            group = first(group), 
-            month_no = last(month_no), 
-            days_pre_booked = max(days_pre_booked))
-#Retaining only those attributes that are meaningful for clustering
-data_transformed <- data_transformed %>%
-  select(-PNRLocatorID, -uid, -PaxName, -ServiceStartDate, -UFlyRewards)
-
-```
-
-**Normalization the numeric columns of interest**
-
-  As we are going to use clustering, which uses distance metric to measure similarity, we wanted to bring all the numeric variables to the same scale by using Min-Max Normalization.
-```{r warning = FALSE, message = FALSE}
-normalize <- function(x){return ((x - min(x))/(max(x) - min(x)))}
-
-temp <- ungroup(data_transformed)
-
-customer_data_clust = mutate(temp,
-                     Age = normalize(Age),
-                     days_pre_booked = normalize(days_pre_booked),
-                     group_size=normalize(group_size))
-```
-
-*Explanation of Approach and Goals:*
-Using Hierarchical clustering to check how many clusters would be optimal for clustering
+  pattern1|pattern2
+  --|--
+  Colom, Columbia, Colombianbian | Columbian
+  CostaR | Costa Rican
+  Ethio, Ethiopianpian | Ethiopian
+  Hair | Hairbender
+  Alm Rasp | Almond Rasp
+  Chai | Tea
   
-```{r warning = FALSE, message = FALSE}
-# Calculate distance - daizy
-customer_daizy <- customer_data_clust[,c(3:5,8:13)]
-customer_daizy$BookingChannel<-as.factor(customer_daizy$BookingChannel)
-customer_daizy$UflyMemberStatus<-as.factor(customer_daizy$UflyMemberStatus)
-customer_daizy$month_no<-as.factor(customer_daizy$month_no)
-customer_daizy$Final_Destination <- as.factor(customer_daizy$Final_Destination)
-gower_dist <- daisy(customer_daizy,
-                    metric = "gower",
-                    type = list(logratio = 3))
-h_cluster <- hclust(gower_dist, method = "ward.D")
-plot(h_cluster, hang = 0, label = F, main = "Cluster Dendrogram")
-groups<-cutree(h_cluster,k=3)
-rect.hclust(h_cluster, k = 3, border = "darkblue")
+``` {r, cache = TRUE}
+# Create a copy of the data frame
+df <- dfs
+
+# Checking for class of variables
+sapply(df, class)
+
+# Converting Date column to date class format
+df$Date <- as.Date(df$Date,"%m/%d/%y")
+
+# Extracting Year from Date 
+#df$year <-  as.factor(year(df$Date))
+
+# Filtering the factor class columns that has to be numeric
+cl <- c("Gross.Sales","Net.Sales","Tax", "Discounts")
+
+# Replacing the characters from the above columns and converting them to numeric
+df[,cl] <- sapply(df[,cl], function(x) str_replace_all(x, "[$)]", "" ))
+df[,cl] <- sapply(df[,cl], function(x) str_replace_all(x, "[(]", "-" ))
+df[,cl] <- sapply(df[,cl], as.numeric)
+
+unique(df$Category)
+# Removing the NA category
+df <- df[!is.na(df$Category)& (df$Category != "None"),]
+
+# Clubbing the "Regular" and "Regular Price" in Price.Point.Name into "Regular"
+
+df$Price.Point.Name <- as.factor(gsub("Regular Price", "Regular", df$Price.Point.Name))
+
+unique(sort(df$Item))
+
+# Removing Size details from Item list and editing the text
+df$Item <- as.factor(df$Item %>% gsub("\\bSM\\b", "", .) %>% gsub("\\bLG\\b", "", .) %>% gsub("\\b12oz\\b", "", .) %>% gsub("\\bCostaR\\b", "Costa Rican", .) %>% gsub("\\bColom\\b", "Colombian", .) %>% gsub("\\bColombianbian\\b", "Colombian", .) %>% gsub("\\bColumbia\\b", "Colombian", .) %>% gsub("\\bEthio\\b", "Ethiopian", .) %>% gsub("\\bEthiopianpian\\b", "Ethiopian", .) %>% gsub("\\bHair\\b", "Hairbender", .) %>% gsub("ðY\u008d<LemonadeðY\u008d<", "Lemonade", .) %>% gsub("\\bAlm Rasp\\b", "Almond Rasp", .) %>% gsub("\\bChai\\b", "Tea", .) %>% trimws())
+
+unique(sort(df$Item))
+
+# Creating the date time field
+df$DateTime <- with(df, as.POSIXct(paste(as.Date(Date, format="%m/%d/%y"), Time)))
+
+# Dropping refunds from the data and removing the redundant data
+df <- df[(df$Event.Type != "Refund"),]
+df$Event.Type <- NULL 
+
+# Check for non-NA notes in the dataframe
+sum(!is.na(df$Notes))
+# The notes are mostly available for refunds with only 3 notes for non-refunds
+df$Notes <- NULL
+
+# Checking for duplicated rows
+sum(duplicated(df)) >1
+
+# Filtering for non-duplicated rows
+DF <-  df[!duplicated(df), ]
+
+missmap(DF)
+summary(DF)
+rm(df)
 ```
 
-*Interpretation from Approach:*
-We can see from the dendrogram that the data can be separated with 3 optimal clusters.
+__Assumption__
 
-*Conclusions from Approach:*
-We decided to go ahead with 3 clusters.
+* We ignored refund transactions for this particular exercise as the data is not enough to conclude anything based on the refunds
+* We found an overlap between notes and refunds in the data. After removing the records with refunds only 3 notes are left in the data. We removed them from our analysis 
 
-*Explanation of Approach and Goals 2:*
-Now we cluster the data using k-prototypes, as this will allow us to handle a mix of continuous and categorical data. We will use start city, final destination, type of trip, group size, whether it is a group, how far in advance the ticket was purchased, booking channel, and membership status to try and define the groups. First, we will plot the sum of squared errors curve to try and find the optimal number of clusters. Then, we will loop through the clustering several times to try and get a sense of generalized performance, as k-prototypes chooses random starting points for the clustering.
-```{r warning = FALSE, message = FALSE, cache = TRUE}
-prototype_data <- customer_data_clust %>% 
-  select(First_City, Final_Destination, round_trip, group_size, group, days_pre_booked, BookingChannel, UflyMemberStatus) %>% as.data.frame()
+__Inference__:  
+
+* Duplicate records were found in the data and removed
+* None and Null categories are found and removed from the data
+* Removed the redundant size information (SM, LG, 12oz) from the Item  
+* Following are the items on the left which are clubbed to the right one based on their right fit
+* 35% of the records have a missing Customer ID
+
+## Visualization
+
+We want to explore the data further to evaluate the impact of sales based on the following factors:
+
+* Month of the Year
+* Day of the Week
+* Hour of the Day
+
+Also, we want to see the share of different categories in the total gross sales for Central Perk.
+``` {r,fig.width=12, fig.height=8}
+
+# Copy of the cleaned data 
+cp <- DF
+
+## See the range of the data
+range(DF$Date)
+
+y1_start <- as.Date("20160801","%Y%m%d")
+y1_end <- as.Date("20170731","%Y%m%d")
+y2_start <- as.Date("20170801","%Y%m%d")
+y2_end <- as.Date("20180731","%Y%m%d")
+
+cp <- cp[(cp$Date >= y1_start) & (cp$Date <= y2_end),]
+
+cp$yid <- as.factor(ifelse(((cp$Date >= y1_start) & (cp$Date <= y1_end)),"y1","y2"))
+
+# Extracting the month, day of week and hour of the day level details for analysis 
+cp$Hour <- as.factor(hour(hms(cp$Time)))
+cp$Month <- as.factor(month((cp$Date)))
+cp$Day <- as.factor(wday((cp$Date))) # 1 is Sunday
+
+p1 <- ggplot(cp, aes(x = Hour, y = Gross.Sales, fill = Category)) + geom_bar(stat = "identity")  + labs(x="Hour of Day", y = "Total Gross sales in dollars",
+       title="Gross Sales for categories by hour of day")
+
+cp$Day_Name <- mapvalues(cp$Day, 
+          from=c("1","2","3","4","5","6","7"), 
+          to=c("Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"))
+
+p2 <- ggplot(cp, aes(x = Day_Name, y = Gross.Sales, fill = Category)) + geom_bar(stat = "identity")  + labs(x="Day of Week", y = "Total Gross sales in dollars",
+       title="Gross Sales for categories by day of week")
+
+cp$Day_Name <- NULL
+
+p3 <- ggplot(cp, aes(x = Month, y = Gross.Sales, fill = Category)) + geom_bar(stat = "identity")  + labs(x="Month of Year", y = "Total Gross sales in dollars",
+       title="Gross Sales for categories by month")
+
+grid.arrange(p1, p2, p3, nrow=3)
+
+cat_data <- cp %>% group_by(Category) %>% dplyr::summarise(s = sum(Gross.Sales))
+cat_data$s <- cat_data$s/sum(cp$Gross.Sales)
+ggplot(cat_data, aes(x = reorder(Category,s), y = s)) + ylim(0,1) +  coord_flip()+ geom_bar(stat = "identity")  + labs(x="Category", y = "Share of Total Gross Sales",
+       title="Share of category in Total Gross Sales") + theme_update()
+rm(cat_data)
+```
+
+__Inference__
+
+* The gross sales were prominent in the mornings from the window 8-11 and thereafter the sales dipped as the day progresses
+* The demand for coffee and food follows the same trend as the hour of the day sales trends
+* The sales on weekends were more than the weekdays
+* Coffee has the major share of gross sales which is 70% of the total gross sales
+
+# Statistical techniques to test the sales growth YoY
+
+We want to check the hypothesis of the central Perk that _the sales for the coffee shops are increasing year on year_ by performing statistical tests
+
+``` {r, messages = FALSE}
+
+ggplot(cp, aes(x = yid, y = Gross.Sales)) + geom_boxplot() + ylim(0,25) + labs(x = "Year",y = "Gross Sales")
+
+y1 <- cp[cp$yid == "y1",]$Gross.Sales
+y2 <- cp[cp$yid == "y2",]$Gross.Sales
+
+cp %>% group_by(yid) %>%
+  dplyr::summarise(
+    count = n(),
+    mean = mean(Gross.Sales, na.rm = TRUE),
+    sd = sd(Gross.Sales, na.rm = TRUE)
+  )
+
+# Histogram to check normality 
+ggplot(cp, aes(x=Gross.Sales)) + geom_histogram() + labs(x = "Gross Sales") + facet_grid(yid~.)
+
+# Normality check based on Kolmogorov-Smirnov test
+ks.test(y1,y='pnorm',alternative='two.sided');ks.test(y2,y='pnorm',alternative='two.sided')
+
+# Normal Q-Q plot
+qqnorm(y1, main = "Year1 Normal Q-Q Plot");qqline(y1,col='red');qqnorm(y2, main = "Year2 Normal Q-Q Plot");qqline(y2,col='red')
+
+#Wilcoxon Test
+wilcox.test(y2, y1,exact = FALSE, alternative = "less")
+```
+
+__Assumptions__
+Since the data is from Mid July 2016 to partial month on August 2018, we took the start of the year from August to July for our analysis. 
+
+Year|Period
+----|----
+y1| August 2016 - July 2017 
+y2| August 2017 - July 2018
+
+__Inference__
+
+* From the box plot we can see that the year2 (y2) mean sales are slightly less than the year1 (y1) gross sales
+* The p values based on Kolmogorov-Smirnov test suggests that the sales from both years are not normal. This can be backed up by the evidence of histogram and Q-Q plots. Thus, we can't use t-test here
+* We used Wilcoxon statistical technique to test our hypothesis. The null and alternative hypothesis for our test is as follows:
+
+  + Null Hypothesis: The sales in the y2 are greater than or equal to sales in y1 
+  + Alternative Hypothesis: The sales in the y2 are less than sales in y1
+
+__Conclusion__
+Based on the p-value < 2.2e-16 suggests there is enough evidence to reject the null hypothesis
+
+# Loyalty check for existing customer base through retention analysis
+
+##Data Transformation
+
+After our preliminary analysis on the given dataset, we went onto explore the customer information and answer the question "whether the existing customer base is loyal?"
+``` {r, cache = FALSE, fig.width=12, fig.height=8}
+## Getting customers with non null customer id
+customers <- cp[!is.na(cp$Customer.ID),]
+
+unique_cust <- customers %>% group_by(Customer.ID) %>% dplyr::summarise(Acq_date = min(Date)) %>% 
+  mutate(Acq_month = format(Acq_date,"%Y-%m"))
+
+customer_wise_order <- customers %>% 
+  mutate(ym = format(Date, "%Y-%m")) %>%
+  group_by(Customer.ID, ym) %>%
+  dplyr::summarise(Orders = n(),
+            Gross_Sales = sum(Gross.Sales),
+            Net_Sales = sum(Net.Sales),
+            Qty = sum(Qty))
+
+final_cust <- inner_join(unique_cust, customer_wise_order, by="Customer.ID")
+final_cust$x <- as.yearmon(final_cust$ym,"%Y-%m")
+final_cust$y <- as.yearmon(final_cust$Acq_month,"%Y-%m")
+
+final_cust$diff <- round((final_cust$x - final_cust$y) * 12)
+str(final_cust)
+
+ggplot(final_cust, aes(x=diff)) + geom_histogram(bins = 24) + labs(title = "Count of customers over the past 24 months", x = "Months from acquisition", y = "Count of Customers") + theme_update()
+```
+__Assumption__
+
+* All the records with NA customer ID which are 35% of the records in the original data are customer's who are not loyalty members for the coffee shop. Therefore, we removed those records from our analysis. 
+
+* Since July 2016 and August 2018 month don't have the complete month data, we analyzed the data from August 2017 to July 2018 which is a two-year data
+
+Year|Period
+----|----
+y1| August 2016 - July 2017 
+y2| August 2017 - July 2018
+
+__Conclusion__
+The new customer level data has 30151 unique customers. The drop of customers is evident from the graph "Count of customers over the past 24 months". The customers acquired in the month-0 have dropped from 30151 to less than 2500 in the next month which is close to a 90% drop in their customer base.
+
+## Total gross sales by customers based on the acquisition month
+
+We looked at the last 12 month data to see the customers acquisition and retention patterns. Also, the contribution of sales for each month was tracked based on the month they were acquired.  
+
+``` {r, cache = FALSE, fig.width=12, fig.height=8 }
+
+# Filtering the customers who were acquired after August 2017
+final_cust_y2 <- final_cust[final_cust$Acq_month > '2017-07',]
+
+#Pivot up on to get repeat users
+pivot_cust <- final_cust_y2 %>% 
+            select (Customer.ID, Acq_month, diff) %>% 
+        group_by(Acq_month, diff) %>% dplyr::summarise(repeat_users = n_distinct(Customer.ID))
+
+pivot_cust$cmonth <- as.Date(as.yearmon(pivot_cust$Acq_month)) 
+
+pivot_cust$cmonth <- as.yearmon(AddMonths(pivot_cust$cmonth, pivot_cust$diff))
+pivot_cust$Acq_month <- as.yearmon(pivot_cust$Acq_month) 
+pivot_cust$diff <- NULL
+
+pivot_cust <- pivot_cust[,c(1,3,2)]
+pivot_cust1 <- spread(pivot_cust, cmonth,repeat_users)
+
+# Revenue for retained customers
+
+pivot_cust <- final_cust_y2 %>% select(Net_Sales, Acq_month, ym) %>% group_by(Acq_month, ym) %>%
+  dplyr::summarise(repeat_purchases = sum(Net_Sales))
+
+pivot_cust$Acq_month <- as.yearmon(pivot_cust$Acq_month) 
+pivot_cust$ym <- as.yearmon(pivot_cust$ym) 
+
+pivot_cust2 <- spread(pivot_cust, ym,repeat_purchases)
+#we need to melt data
+cohort_fig1 <- melt(pivot_cust2, id.vars = "Acq_month")
+
+colnames(cohort_fig1) <- c('cohort', 'month', 'revenue')
+cohort_fig1[is.na(cohort_fig1$revenue),]$revenue <- 0
+
+palette1 <- colorRampPalette(c('#fde0dd','#fcc5c0','#fa9fb5','#f768a1','#dd3497','#ae017e','#7a0177'))
+
+ggplot(cohort_fig1, aes(x= as.factor(month), y=revenue, fill = as.factor(cohort)))+ geom_bar(stat="identity") +
+  scale_fill_manual(values = palette1(nrow(pivot_cust2))) +
+  ggtitle('Total Gross Sales by customers based on their acquisition month') + labs(x= "Month of Interest", y = "Gross Sales") + labs(fill = "Acquisition Month")
+
+```
+
+__Assumption__
+Only sales by customers acquired after July 2017 are considered for the analysis. The gross sales amount doesn't reflect the entire sales amount in that particular month. 
+
+__Interpretation__
+For our analysis, we considered the period starting from August 2017 to July 2018. In the first month of our dataset, the entire sales were from the customers acquired in that month ONLY. In the subsequent months the contribution of sales come from two sources; First, from customers acquired in the earlier month starting August 2017 and returning to the store to make a purchase. Second, sales of customers acquired in that month.
+
+For example, sales in the Sep 2017 $8K sales were from customers acquired in Sep 2017 and $2k sales were from customers acquired in July 2017 and returned in Sep 2017 to make a purchase.
+
+# Exploring the customer segments that exist in the data
+
+We would like to use the customer level data to find homogeneous groups who distinguish themselves from other groups. We used clustering on customer data to analyze the groups.
+We introduced new variables that can help us find better clusters. The following are the variables of interest to us:
+
+* Number of Visits 
+* Maximum Date of Transaction
+* Minimum Date of Transaction
+* Weekly Spend
+* Weekly Visits
+* Popular Items
+* Weekend Sales
+* Popular Hour
+
+``` {r, cache = TRUE, warnings = FALSE}
+cp2 <- customers %>% filter(Category != 'Extras') 
+
+cp2_basket <- cp2 %>% group_by(Customer.ID,DateTime) %>% 
+  dplyr::summarise(basket_size = sum(Qty),
+            sum_sales = sum(Gross.Sales)) %>% ungroup() %>% group_by(Customer.ID) %>%
+  dplyr::summarise(avg_basket = mean(basket_size),
+            num_visits = length(DateTime),
+            min_date = min(DateTime),
+            max_date = max(DateTime),
+            total_sales = sum(sum_sales)) %>%
+  mutate(num_weeks =  if_else(num_visits == 1,1,as.numeric(difftime(max_date,min_date,units='weeks'))),
+         num_weeks = if_else(num_weeks < 1, 1, num_weeks),
+         weekly_spend = total_sales/num_weeks,
+         weekly_visits = num_visits/num_weeks)
+
+cp2_popular <- cp2 %>% group_by(Customer.ID,Item) %>% dplyr::summarise(total_qty = sum(Qty)) %>%
+  ungroup() %>% group_by(Customer.ID) %>% arrange(desc(total_qty)) %>% 
+  dplyr::summarise(popular_item = first(Item))
+
+cp2_time <- cp2 %>% group_by(Customer.ID,DateTime) %>% dplyr::summarise(total_qty = sum(Qty)) %>%
+  mutate(hour = hour(DateTime)) %>% ungroup() %>% 
+  group_by(Customer.ID,hour) %>% dplyr::summarize(num = length(total_qty)) %>% ungroup() %>% group_by(Customer.ID) %>%
+  arrange(desc(num)) %>% dplyr::summarise(popular_hour = first(hour))
+
+cp2_weekend <- cp2 %>% mutate(day = wday(DateTime)) %>% filter(day %in% c(1,7)) %>%
+  group_by(Customer.ID) %>% dplyr::summarize(weekend_sales = sum(Gross.Sales))
+
+'%ni%' <- Negate('%in%')
+cp2_coffee <- cp2 %>% mutate(o_cat_flag = if_else(Category %ni% c("Coffee","Tea"),1,0),
+                             o_qty = o_cat_flag * Qty) %>% 
+  group_by(Customer.ID) %>% 
+  dplyr::summarise(total_qty = sum(Qty),
+            total_cats = n_distinct(Category),
+            other_qty = sum(o_qty),
+            per_other = other_qty/total_qty)
+
+first2 <- merge(cp2_basket, cp2_popular, by='Customer.ID')
+second2 <- merge(first2, cp2_time, by='Customer.ID')
+third2 <- merge(second2, cp2_coffee, by = 'Customer.ID')
+final2 <- merge(third2,cp2_weekend,by='Customer.ID',all.x=TRUE)
+
+clust2_data <- final2 %>% mutate(weekend_sales = if_else(is.na(weekend_sales),0,weekend_sales),
+                                 per_weekend = weekend_sales/total_sales) %>%
+  select(Customer.ID,avg_basket,num_weeks,num_visits,weekly_spend,weekly_visits,popular_item,total_cats,popular_hour,per_weekend,per_other)
+
+## Normalizing data
+normalize <- function(x){
+  return ((x - min(x))/(max(x) - min(x)))}
+
+sapply(clust2_data, class)
+
+ix <- (sapply(clust2_data, class) == "numeric") | (sapply(clust2_data, class) == "integer")
+clust2_data2 <- clust2_data
+clust2_data2[,ix] <- sapply(clust2_data2[,ix], normalize)
+  
+## Removing the Customer ID field
+clust2_data3 <- clust2_data2[,-1] 
+
+## Clustering
+clust2_kmeans4 <- clust2_data3[,-c(2,6)] ##Removing the num_weeks variable  ## Removing the popular item variable
 
 SSE_curve <- c()
-for (i in 1:10){
-  sse_avg <- c()
-  k = i
-  for (t in 1:5){
-    kpro <- kproto(prototype_data, k)
-    sse <- sum(kpro$withinss)
-    sse_avg[k] <- sse
-  }
-  SSE_curve[i] <- mean(sse_avg, na.rm = T)}
-
+for (k in 1:10) {
+  kcluster <- kmeans(clust2_kmeans4, k)
+  sse <- sum(kcluster$withinss)
+  SSE_curve[k] <- sse
+}
 plot(1:10, SSE_curve, type="b", xlab="Number of Clusters", ylab="SSE")
+
+## The steepest dip in SSE occurs when k=5
+num_clusters4 = 5
+
+kcluster4 <- kmeans(clust2_kmeans4, num_clusters4)
+
+## Obtaining cluster number from kmeans to join it to original data
+clustered_data4 <- cbind(clust2_data,kcluster4$cluster)
+#write.csv(clustered_data4,"clustered_data4.csv")
+
+clustered_data4 <- read.csv("clustered_data4.csv")
+
+# Number of Visits by cluster
+tapply(clustered_data4$num_visits, clustered_data4$Cluster.number, mean)  
+
+#Popular hour by cluster
+tapply(clustered_data4$popular_hour, clustered_data4$Cluster.number, mean)  
+
+#Cluster who spend well on weekends
+tapply(clustered_data4$per_weekend, clustered_data4$Cluster.number, mean)  
+
+#Num of weeks with the coffee shop by cluster
+tapply(clustered_data4$num_weeks, clustered_data4$Cluster.number, mean)
+
+c1 <- clustered_data4 %>% group_by(Cluster.number) %>% dplyr::summarise(num_visits = mean(num_visits))
+
+c1 %>% 
+  dplyr::mutate(highlight_flag = ifelse(Cluster.number == 2, T, F)) %>% 
+  ggplot(aes(x = Cluster.number, y = num_visits)) +
+    geom_bar(stat = "identity", aes(fill = highlight_flag)) +
+    scale_fill_manual(values = c('#595959', 'red')) + theme(legend.position = 'none') + labs(x= "Cluster Number", y = "Total number of visits") 
+
+
+c2 <- clustered_data4 %>% group_by(Cluster.number) %>% dplyr::summarise(per_weekend = mean(per_weekend))
+
 ```
 
-*Interpretation from Approach:*
-Based on running our analysis on multiple samples, there seems to be a general cutoff point around 3 clusters. You could make an argument for a higher amount of clusters based on the elbow plot, but based on our business assumptions and other evidence from the hierarchical dendrogram we think 3 clusters is a good choice. 
+__Interpretation__
 
-*Conclusions from Approach:*
-Now that we have chosen 3 as our number of clusters we can then run the clustering again and view the clusters.
+* The elbow chart suggests that when the number of clusters equal to 5 there is a steep decrease in standard squared error (SSE). So we took 5 clusters and profiles them on various variables
+* Cluster 2 has made more visits to the coffee shops on an average when compared to other clusters
+* The people in cluster 4 and 5 spend more on weekends than the other clusters 
 
-*Explanation of Approach and Goals 3:*
-Here we will cluster the data and try to initially visualize the results. 
-```{r warning = FALSE, message = FALSE}
-num_proto_clusters = 3
-kpro <- kproto(as.data.frame(prototype_data), num_proto_clusters)
-clprofiles(kpro, as.data.frame(prototype_data))
+![Comparison of key characteristics for the clusters](C:\Users\Pranav\Desktop\Hw.jpeg)
+
+# Analyzing the customer preference for most loyal customers
+
+Based on the clustering results, it is evident that cluster 2 has high visits to the coffee shop and contains all characteristics to be defined as the loyal customer segment. We want to know what makes this particular segment a loyal customer base by looking at their purchase patterns and by analyzing their sales basket. We used the unsupervised technique, association rules to further understand the data.
+
+``` {r, cache = TRUE }
+
+cp_cleaned <- cp[, c("Customer.ID","Item")]
+cp_cleaned <- cp_cleaned[complete.cases(cp_cleaned),]
+
+ddf <- ddply(cp_cleaned,"Customer.ID", function(df1) paste(df1$Item,collapse = ","))
+names(ddf) <- c("Customer.ID", "Items")
+
+cluster_user <- read.csv("clustered_data4.csv", header = TRUE)
+
+merged_data <- merge(ddf, cluster_user[,c("Customer.ID", "Cluster.number")], by= "Customer.ID")
+merged_data <- merged_data %>% filter(Cluster.number == 2)
+merged_data$Customer.ID <- NULL
+merged_data$Cluster.number <- NULL
+
+write.table(merged_data, file = "association_data.txt",quote = F, row.names = F, col.names = F)
+
+txn_df = read.transactions("association_data.txt", format = "basket", sep=",")
+#summary(txn_df)
+
+basket_rules <- apriori(txn_df,parameter = list(sup = 0.1, conf = 0.1, minlen = 2))
+
+subrules <- head(basket_rules, n = 15, by = "lift")
+#plot(subrules, method="graph", control=list(type="items"), main = "Association Rules", cex = 2)
+inspect(subrules)
 ```
 
-*Interpretation from Approach:*
-The data here is still normalized so it's hard to interpret some of the differences in the continuous variables, but we can see that there are some differences. Cluster 1 is mostly round-trip tickets whereas cluster 2 is individual travelers. Days booked in advance also have differences that look like they could be significant.
+__Interpretation__
+We found the following set of products have high lift values:
+ 
+ + Almond and Latte
+ + Drip, Latte and Croissant
 
-*Conclusions from Approach:*
-As an initial exploration, we can see that there are differences between the clusters. Furthur visualizations will help us gain a better understanding of these differences.
+# Summary
+We believe that the following recommendations will increase customer loyalty, increase revenue, and smooth the daily sales curve.
 
-*Explanation of Approach and Goals 4:*
-Because the goal of our analysis is to understand our customers, we want to merge our clusters back into our sample data to examine the data at a lower customer level instead of a trip level.
+_Create Mobile Application and Loyalty Program_
+Coffee shops are building loyal customers with a mobile app that simplify ordering with pre-ordering and favorite purchases, managing loyalty points, target marketing. For example, Starbucks reports generating 15% of its sales volume through their mobile app. Additionally, customers using a loyalty program are more likely to refer others and bring friends and co-workers to the shop. Building a mobile app does not require an IT department, there are companies who specialize in creating mobile apps for coffee shops.
 
-```{r warning = FALSE, message = FALSE}
-data_transformed$cluster <- kpro$cluster
-final_segments <- merge(suncountry, data_transformed, by = 'PNRLocatorID')
-# write.csv(final_segments, "final_Segments_v2.csv")
-```
+_Increase Food Offerings_
+Daily sales of food items follow the same pattern as coffee sales, with pastries being most popular. We believe that diversifying food offerings to include healthy, pre-packaged, "grab and go" food will give customers a reason to visit other than for their morning coffee. This will increase demand during time of day where demand is lagging from its peak.
 
-*Interpretation from Approach:*
-Now that our sample data has a 'cluster number' column with which we can examine the differences in between clusters in variables that we didn't cluster on.
+_Happy Hour_
+Sales from 4:00 to close is lower than any other period of the day. Many people do not drink coffee in the late afternoon or evening. Creating a "happy hour" from 4:00 to close with a 10% discount on all beverages for loyalty member customers will incent customers to visit the shop late in the day. We don't expect this to raise sales to the morning or early afternoon levels but expect it to increase traffic from current levels.
 
-*Explanation of Approach and Goals 5:*
-Now, we are going to plot where are people in different clusters going to on a normal basis. 
+_Cross-Selling Opportunity_
+Drip coffee is the most popular product and customers often purchase a donut or croissant with their drip coffee. This is a cross selling opportunity for the associates and the mobile app. When a customer purchases a drip coffee offer them a donut or croissant.
 
-```{r warning = FALSE, message = FALSE}
 
-cl1_cities <- final_segments %>%
-  filter(cluster == 1 & Final_Destination != 'MSP') %>%
-  select(Final_Destination) %>%
-  group_by(Final_Destination) %>%
-  summarise(count = n()) %>%
-  arrange(count) %>% 
-  top_n(7) %>%
-  ggplot() + geom_bar(aes(sort(Final_Destination, decreasing = T), count), stat = 'identity', fill = 'green') + labs(x = 'Destinations')
 
-cl2_cities <- final_segments %>%
-  filter(cluster == 2 & Final_Destination != 'MSP') %>%
-  select(Final_Destination) %>%
-  group_by(Final_Destination) %>%
-  summarise(count = n()) %>%
-  arrange(count) %>% 
-  top_n(7) %>%
-  ggplot() + geom_bar(aes(sort(Final_Destination, decreasing = T), count), stat = 'identity', fill = 'blue') + labs(x = 'Destinations')
-
-cl3_cities <- final_segments %>%
-  filter(cluster == 3 & Final_Destination != 'MSP') %>%
-  select(Final_Destination) %>%
-  group_by(Final_Destination) %>%
-  summarise(count = n()) %>%
-  arrange(count) %>% 
-  top_n(7) %>%
-  ggplot() + geom_bar(aes(sort(Final_Destination, decreasing = T), count), stat = 'identity', fill = 'red') + labs(x = 'Destinations')
-  
-plot_grid(cl1_cities, cl2_cities, cl3_cities)
-```
-
-*Interpretation from Approach:*
-Cluster 1 is flying to locations like Cancun, Las Vegas, LA, and Orlando which suggests these might be vacationers. Cluster 2 flies most often to cities like Boston, D.C, New York. Considering that these are solo travelers it is possible they are flying for business or other non-vacation reason. Cluster 3 flies heavily to Dallas, and also to a mix of vacation cities. It is less clear what this could mean.
-
-*Conclusions from Approach:*
-The clusters are exhibiting differences in destinations that they are visiting, we can now further see what defines the segments. 
-
-*Explanation of Approach and Goals 6:*
-We want to look at the age distribution to see if we can see any insights. Based on the destinations and group sizes of the clusters, we think that cluster 1 could be families looking to vacation and cluster 2 could be solo travelers going for business or other reasons. 
-
-```{r, warning = FALSE, message = FALSE}
-library(cowplot)
-h1 <- final_segments %>%
-  filter(cluster == 1) %>%
-  select(Age.x) %>%
-  ggplot() + geom_histogram(aes(Age.x), fill = 'blue', stat = "identity") + labs(title = 'Age Distribution', x = 'Age')
-
-h2 <- final_segments %>%
-  filter(cluster == 2) %>%
-  select(Age.x) %>%
-  ggplot() + geom_histogram(aes(Age.x), fill = 'red', stat = "identity") + labs(title = 'Age Distribution', x = 'Age')
-
-h3 <- final_segments %>%
-  filter(cluster == 3) %>%
-  select(Age.x) %>%
-  ggplot() + geom_histogram(aes(Age.x), fill = 'green', stat = "identity") + labs(title = 'Age Distribution', x = 'Age')
-
-plot_grid(h1, h2, h3)
-```
-
-*Interpretation from Approach:*
-Cluster 1 has 2 distinct groups which suggest that these represent parents and their children. Cluster 2 is clearly more centered around the working ages of 20-60 which could mean that these are that "business" group which we think is there. Again, cluster 3 seems to be somewhat of a mix, but it is worth noting that it captures more of the retirement ages than the other groups. 
-
-*Conclusions from Approach:*
-We now can say that cluster 1 appears to be families, cluster 2 solo travelers for business or other reasons, and cluster 3 looks like a mix, possibly some other traveling groups like tours and also some "snow birds" escaping the winter. 
-
-*Explanation of Approach and Goals 7:*
-After the clustering we saw the differences in group size with the normalized data, now we can look at it in real terms to get a sense of the distributions. 
-
-```{r, warning = FALSE, message = FALSE}
-groups_c1 <- final_segments %>%
-  filter(cluster == 1) %>%
-  select(group_size) %>%
-  group_by(group_size) %>%
-  summarise(count = n()) %>%
-  ggplot() + geom_bar(aes(sort(group_size, decreasing = T), count), stat = 'identity', fill = 'red') + labs(x = 'Group size')
-
-groups_c2 <- final_segments %>%
-  filter(cluster == 2) %>%
-  select(group_size) %>%
-  group_by(group_size) %>%
-  summarise(count = n()) %>%
-  ggplot() + geom_bar(aes(sort(group_size, decreasing = T), count), stat = 'identity', fill = 'blue') + labs(x = 'Group size')
-
-groups_c3 <- final_segments %>%
-  filter(cluster == 3) %>%
-  select(group_size) %>%
-  group_by(group_size) %>%
-  summarise(count = n()) %>%
-  ggplot() + geom_bar(aes(sort(group_size, decreasing = T), count), stat = 'identity', fill = 'green') + labs(x = 'Group size')
-plot_grid(groups_c1,groups_c2,groups_c3)
-```
-
-*Interpretation from Approach:*
-Cluster 1 has a large outlier that skews the results, but it looks like it matches the distribution for cluster 3 in terms of size. Both groups have a small spike for couples, and then some more groups of 3-10, and then another spike around 20. Cluster 2 is all single travelers. 
-
-*Conclusions from Approach:*
-In terms of group size, cluster 1 and 3 behave similarly. An interesting thing to note is that in both clusters 1 and 3 there is a significant amount of couples. This weakens our argument that cluster 1 is families somewhat, but we think this could just be due to noise. 
-
-*Explanation of Approach and Goals 8:*
-To understand consumer behavior, it is important to see whether groups behave differently in terms of when they book their tickets. Here we will plot a distribution of the days in advance of the trip for ticket purchase. 
-
-```{r, warning = FALSE, message = FALSE}
-
-h1 <- final_segments %>%
-  filter(cluster == 1) %>%
-  select(days_pre_booked) %>%
-  ggplot() + geom_histogram(aes(days_pre_booked), fill = 'blue') + labs(title= 'days between purchase and departure', x = 'days')
-
-h2 <- final_segments %>%
-  filter(cluster == 2) %>%
-  select(days_pre_booked) %>%
-  ggplot() + geom_histogram(aes(days_pre_booked), fill = 'red') + labs(title= 'days between purchase and departure', x = 'days')
-
-h3 <- final_segments %>%
-  filter(cluster == 3) %>%
-  select(days_pre_booked) %>%
-  ggplot() + geom_histogram(aes(days_pre_booked), fill = 'green') + labs(title= 'days between purchase and departure', x = 'days')
-
-plot_grid(h1, h2, h3)
-```
-
-*Interpretation from Approach:*
-Cluster 1 books well in advance, with most of the records coming more than 300 days in advance. Cluster 2 is booked closer to departure date.
-
-*Conclusions from Approach:*
-Cluster 1 makes sense because families like to plan their vacations well in advance because of limited vacation time. Cluster 2 make sense as people in this cluster are traveling for business reasons too.
